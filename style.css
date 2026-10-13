@@ -1049,10 +1049,13 @@ h3 {
   .form-row {
     grid-template-columns: 1fr;
   }
+  /* Menimpa grid tablet: di HP semua kartu harus satu kolom penuh. */
+  .overview-grid,
+  .content-grid,
   .budget-category-grid,
   .goal-grid,
   .settings-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   /* Mobile-first polish: nyaman untuk layar kecil dan notch perangkat */
   main {
@@ -1088,11 +1091,14 @@ h3 {
   .balance-top h2 { font-size: clamp(25px, 8vw, 31px); word-break: break-word; }
   .balance-stats { flex-wrap: wrap; row-gap: 14px; }
   .balance-stats > div { min-width: calc(50% - 8px); }
-  .overview-grid { gap: 10px; margin-bottom: 25px; }
-  .progress-card, .insight-card { padding: 15px; }
-  .content-grid { gap: 12px; margin-bottom: 12px; }
-  .panel { width: 100%; padding: 14px; }
-  .chart-wrap { height: 135px; margin-top: 18px; }
+  .overview-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 25px; }
+  .progress-card, .insight-card { min-width: 0; padding: 15px; }
+  .content-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+  .content-grid > *, .overview-grid > * { min-width: 0; }
+  .panel { width: 100%; min-width: 0; padding: 14px; }
+  .panel-head { min-width: 0; }
+  .panel-head .text-button { flex: 0 0 auto; }
+  .chart-wrap { width: 100%; height: 135px; margin-top: 18px; }
   .bars { padding: 0 2px; }
   .bar { width: 6px; }
   .legend { justify-content: flex-start; flex-wrap: wrap; }
@@ -1121,6 +1127,15 @@ h3 {
   main { padding-left: 10px; padding-right: 10px; }
   .balance-stats > div { min-width: 100%; }
   .balance-stats > div:nth-child(2) { border-top: 1px solid #ffffff30; padding-top: 10px; }
+  .wallet-icon { display: none; }
+  .card-title strong { font-size: 14px; }
+  .card-title small { font-size: 8px; }
+  .panel-head h2 { font-size: 16px; }
+  .category-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
+  .category-row b, .category-row strong { font-size: 10px; }
+  .category-row small { font-size: 8px; }
+  .mini-bar { min-width: 0; }
+  .text-button { font-size: 10px; }
   .header-actions { gap: 7px; }
   .notification { padding: 10px; }
 }
