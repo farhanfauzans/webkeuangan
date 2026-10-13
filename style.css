@@ -553,7 +553,7 @@ h3 {
 }
 .overview-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.08fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 38px;
 }

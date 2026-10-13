@@ -109,7 +109,7 @@
             <div class="card-title">
               <span class="icon-box teal">⌁</span>
               <div>
-                <small>BATAS PENGELUARAN</small
+                <small>BATAS PENGELUARAN BULANAN</small
                 ><strong id="budgetLimit">Rp0</strong>
               </div>
             </div>
@@ -118,6 +118,20 @@
               ><b id="budgetPct">0%</b>
             </div>
             <div class="progress-track"><i id="budgetBar"></i></div>
+          </article>
+          <article class="progress-card">
+            <div class="card-title">
+              <span class="icon-box teal">⏱</span>
+              <div>
+                <small>BATAS UANG HARI INI</small
+                ><strong id="dailyBudgetLimit">Rp0</strong>
+              </div>
+            </div>
+            <div class="progress-label">
+              <span id="dailyProgressText">Rp0 terpakai hari ini</span
+              ><b id="dailyPct">0%</b>
+            </div>
+            <div class="progress-track"><i id="dailyBar"></i></div>
           </article>
           <article class="progress-card">
             <div class="card-title">
@@ -339,12 +353,18 @@
             inputmode="numeric"
             placeholder="Rp8.000.000" /></label
         ><label
-          >Batas pengeluaran<input
+          >Batas pengeluaran bulanan<input
             required
             name="budget"
             class="currency-input"
             inputmode="numeric"
             placeholder="Rp5.000.000" /></label
+        ><label
+          >Batas uang hari ini <small>(opsional)</small><input
+            name="dailyBudget"
+            class="currency-input"
+            inputmode="numeric"
+            placeholder="Rp150.000" /></label
         ><button class="primary-button form-submit">Simpan pengaturan</button>
       </form>
     </div>

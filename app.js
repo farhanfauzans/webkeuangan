@@ -10,6 +10,7 @@ const cats = [
 const base = {
   income: 8000000,
   budget: 5000000,
+  dailyBudget: 150000,
   transactions: [
     {
       id: "a",
@@ -47,6 +48,7 @@ const base = {
 };
 let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || base;
 // Pendapatan dasar dari pengaturan bulanan tidak dihitung dua kali sebagai transaksi demo gaji.
+if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
 if (!data.transactions.some((x) => x.monthlyIncome)) {
   const monthlyTransaction = data.transactions.find((x) => x.name === "Gaji bulanan" && x.income);
   if (monthlyTransaction) monthlyTransaction.monthlyIncome = true;
@@ -112,6 +114,14 @@ function render() {
   $("#savingPct").textContent = Math.round(sp) + "%";
   $("#budgetBar").style.width = bp + "%";
   $("#savingBar").style.width = sp + "%";
+  const todayKey = new Date().toISOString().slice(0, 10),
+    todayUsed = sum(exp().filter((x) => x.date === todayKey)),
+    dailyPct = data.dailyBudget ? Math.min(100, (todayUsed / data.dailyBudget) * 100) : 0;
+  $("#dailyBudgetLimit").textContent = money(data.dailyBudget);
+  $("#dailyProgressText").textContent = data.dailyBudget ? `${money(todayUsed)} terpakai hari ini` : "Belum ada batas harian";
+  $("#dailyPct").textContent = Math.round(dailyPct) + "%";
+  $("#dailyBar").style.width = dailyPct + "%";
+  $("#dailyBar").style.background = dailyPct >= 90 ? "#df765d" : "";
   $("#budgetLarge").textContent = money(data.budget);
   $("#budgetExplanation").textContent = data.budget
     ? `${money(used)} telah digunakan dari batas bulanan.`
@@ -254,6 +264,7 @@ $("#openBudget").onclick = $("#openBudget2").onclick = () => {
   let f = $("#budgetForm");
   f.income.value = money(data.income);
   f.budget.value = money(data.budget);
+  f.dailyBudget.value = data.dailyBudget ? money(data.dailyBudget) : "";
   modal("budgetModal");
 };
 $("#openGoal").onclick = () => modal("goalModal");
@@ -292,6 +303,7 @@ $("#budgetForm").onsubmit = (e) => {
   e.preventDefault();
   data.income = number(e.target.income.value);
   data.budget = number(e.target.budget.value);
+  data.dailyBudget = number(e.target.dailyBudget.value);
   close("budgetModal");
   save();
   toast("Pengaturan bulanan disimpan");
