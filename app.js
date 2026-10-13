@@ -219,11 +219,26 @@ function go(p) {
   $("[data-dashboard-only]").style.display = p === "dashboard" ? "inline-flex" : "none";
   history.replaceState(null, "", "#" + p);
 }
+function closeMobileMenu() {
+  $("#sidebar").classList.remove("open");
+  $("#sidebarBackdrop").classList.remove("open");
+  $("#menuToggle").setAttribute("aria-label", "Buka menu navigasi");
+  $("#menuToggle").textContent = "☰";
+}
+function toggleMobileMenu() {
+  const open = $("#sidebar").classList.toggle("open");
+  $("#sidebarBackdrop").classList.toggle("open", open);
+  $("#menuToggle").setAttribute("aria-label", open ? "Tutup menu navigasi" : "Buka menu navigasi");
+  $("#menuToggle").textContent = open ? "×" : "☰";
+}
+$("#menuToggle").onclick = toggleMobileMenu;
+$("#sidebarBackdrop").onclick = closeMobileMenu;
 $$(".nav-link").forEach(
   (x) =>
     (x.onclick = (e) => {
       e.preventDefault();
       go(x.dataset.page);
+      closeMobileMenu();
     }),
 );
 $$("[data-go]").forEach((x) => (x.onclick = () => go(x.dataset.go)));

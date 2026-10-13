@@ -79,6 +79,8 @@ body.dark {
 .dark .reset-button,.dark .nav-link { color: #a5b5b3; }
 .dark .nav-link.active { color: #80d2c6; }
 .dark .balance-card { box-shadow: 0 12px 25px #00000035; }
+.mobile-topbar { display: none; }
+.sidebar-backdrop { display: none; }
 .sidebar {
   width: 248px;
   min-height: 100vh;
@@ -975,31 +977,43 @@ h3 {
   }
 }
 @media (max-width: 650px) {
-  body {
-    display: block;
-  }
-  .sidebar {
-    width: 100%;
-    min-height: auto;
-    height: auto;
-    padding: 14px 15px;
-  }
-  .brand {
-    padding: 0 3px 13px;
-  }
-  .sidebar nav {
+  body { display: block; }
+  .mobile-topbar {
     display: flex;
-    gap: 4px;
-    overflow-x: auto;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: calc(64px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 15px 0;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
   }
-  .nav-link {
-    padding: 9px 11px;
-    font-size: 12px;
-    white-space: nowrap;
+  .mobile-topbar .brand { padding: 0; font-size: 19px; }
+  .menu-toggle { width: 42px; height: 42px; border: 1px solid var(--line); background: #fff; border-radius: 9px; color: var(--ink); font-size: 22px; cursor: pointer; }
+  .dark .menu-toggle { background: #1b2c2c; color: var(--ink); border-color: #304645; }
+  .sidebar-backdrop { position: fixed; inset: 0; z-index: 29; background: #09232280; opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
+  .sidebar {
+    position: fixed;
+    z-index: 30;
+    left: 0;
+    top: 0;
+    width: min(82vw, 300px);
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: calc(20px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));
+    transform: translateX(-105%);
+    transition: transform .25s ease;
+    box-shadow: 15px 0 40px #10282733;
   }
-  .sidebar-bottom {
-    display: none;
-  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar .brand { padding: 0 4px 32px; }
+  .sidebar nav { display: block; overflow: visible; }
+  .nav-link { padding: 13px 14px; font-size: 14px; white-space: normal; }
+  .nav-link span { font-size: inherit; width: auto; }
+  .sidebar-bottom { display: block; }
   main {
     padding: 25px 16px;
   }
