@@ -197,7 +197,7 @@
             <option value="">Pemasukan & pengeluaran</option>
             <option value="expense">Pengeluaran</option>
             <option value="income">Pemasukan</option></select
-          ><button class="outline-button" id="exportCsv">⇩ Ekspor CSV</button>
+          ><label class="date-filter">Dari<input id="filterFrom" type="date" /></label><label class="date-filter">Sampai<input id="filterTo" type="date" /></label><button class="outline-button" id="clearFilters">Reset filter</button><button class="outline-button" id="exportCsv">⇩ Ekspor CSV</button>
         </div>
         <div class="panel">
           <div id="allTransactions" class="transaction-list full-list"></div>

@@ -46,6 +46,11 @@ const base = {
   recurring: [],
 };
 let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || base;
+// Pendapatan dasar dari pengaturan bulanan tidak dihitung dua kali sebagai transaksi demo gaji.
+if (!data.transactions.some((x) => x.monthlyIncome)) {
+  const monthlyTransaction = data.transactions.find((x) => x.name === "Gaji bulanan" && x.income);
+  if (monthlyTransaction) monthlyTransaction.monthlyIncome = true;
+}
 const $ = (s) => document.querySelector(s),
   $$ = (s) => [...document.querySelectorAll(s)],
   money = (n) => "Rp" + new Intl.NumberFormat("id-ID").format(n || 0),
@@ -71,8 +76,13 @@ const date = (d) =>
     month: "short",
     year: "numeric",
   });
-const exp = () => data.transactions.filter((x) => !x.income),
-  sum = (a) => a.reduce((s, x) => s + x.amount, 0);
+function exp() {
+  return data.transactions.filter((x) => !x.income);
+}
+function inc() {
+  return data.transactions.filter((x) => !!x.income);
+}
+const sum = (a) => a.reduce((s, x) => s + x.amount, 0);
 function toast(t) {
   $("#toast").textContent = t;
   $("#toast").classList.add("show");
@@ -85,11 +95,12 @@ function options(id, includeIncome = false) {
 }
 function render() {
   const used = sum(exp()),
-    saved = Math.max(data.income - used, 0),
+    totalIncome = data.income + sum(inc().filter((x) => !x.monthlyIncome)),
+    saved = totalIncome - used,
     bp = data.budget ? Math.min(100, (used / data.budget) * 100) : 0,
-    sp = data.income ? Math.min(100, (saved / data.income) * 100) : 0;
-  $("#balance").textContent = money(data.income - used);
-  $("#incomeTotal").textContent = money(data.income);
+    sp = totalIncome ? Math.max(0, Math.min(100, (saved / totalIncome) * 100)) : 0;
+  $("#balance").textContent = money(saved);
+  $("#incomeTotal").textContent = money(totalIncome);
   $("#expenseTotal").textContent = money(used);
   $("#savingsRate").textContent = `${Math.round(sp)}% tersisa`;
   $("#budgetLimit").textContent = money(data.budget);
@@ -141,14 +152,18 @@ function renderTx() {
     '<p class="subtitle">Belum ada transaksi.</p>';
   let q = $("#searchTx").value.toLowerCase(),
     c = $("#filterCategory").value,
-    type = $("#filterType").value;
+    type = $("#filterType").value,
+    from = $("#filterFrom").value,
+    to = $("#filterTo").value;
   $("#allTransactions").innerHTML =
     tx
       .filter(
         (x) =>
           x.name.toLowerCase().includes(q) &&
           (!c || x.category === c) &&
-          (!type || (type === "income") === !!x.income),
+          (!type || (type === "income") === !!x.income) &&
+          (!from || x.date >= from) &&
+          (!to || x.date <= to),
       )
       .map(txHTML)
       .join("") || '<p class="subtitle">Tidak ada transaksi yang cocok.</p>';
@@ -339,7 +354,19 @@ document.body.onclick = (e) => {
   }
 };
 $("#searchTx").oninput = renderTx;
-$("#filterCategory").onchange = $("#filterType").onchange = renderTx;
+$("#filterCategory").onchange =
+  $("#filterType").onchange =
+  $("#filterFrom").onchange =
+  $("#filterTo").onchange =
+    renderTx;
+$("#clearFilters").onclick = () => {
+  $("#searchTx").value = "";
+  $("#filterCategory").value = "";
+  $("#filterType").value = "";
+  $("#filterFrom").value = "";
+  $("#filterTo").value = "";
+  renderTx();
+};
 function renderRecurring() {
   $("#recurringList").innerHTML =
     data.recurring
