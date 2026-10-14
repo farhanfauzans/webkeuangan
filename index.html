@@ -2,8 +2,11 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>RuangDana — Keuangan Pribadi</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>RuangDana Keuangan Pribadi</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,8 +17,16 @@
   </head>
   <body>
     <header class="mobile-topbar">
-      <a class="brand" href="#dashboard"><span class="brand-mark">R</span><span>ruang<span>dana</span></span></a>
-      <button class="menu-toggle" id="menuToggle" aria-label="Buka menu navigasi">☰</button>
+      <a class="brand" href="#dashboard"
+        ><span class="brand-mark">R</span><span>ruang<span>dana</span></span></a
+      >
+      <button
+        class="menu-toggle"
+        id="menuToggle"
+        aria-label="Buka menu navigasi"
+      >
+        ☰
+      </button>
     </header>
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
     <aside class="sidebar" id="sidebar">
@@ -216,7 +227,12 @@
             <option value="">Pemasukan & pengeluaran</option>
             <option value="expense">Pengeluaran</option>
             <option value="income">Pemasukan</option></select
-          ><label class="date-filter">Dari<input id="filterFrom" type="date" /></label><label class="date-filter">Sampai<input id="filterTo" type="date" /></label><button class="outline-button" id="clearFilters">Reset filter</button><button class="outline-button" id="exportCsv">⇩ Ekspor CSV</button>
+          ><label class="date-filter"
+            >Dari<input id="filterFrom" type="date" /></label
+          ><label class="date-filter"
+            >Sampai<input id="filterTo" type="date" /></label
+          ><button class="outline-button" id="clearFilters">Reset filter</button
+          ><button class="outline-button" id="exportCsv">⇩ Ekspor CSV</button>
         </div>
         <div class="panel">
           <div id="allTransactions" class="transaction-list full-list"></div>
@@ -360,7 +376,8 @@
             inputmode="numeric"
             placeholder="Rp5.000.000" /></label
         ><label
-          >Batas uang hari ini <small>(opsional)</small><input
+          >Batas uang hari ini <small>(opsional)</small
+          ><input
             name="dailyBudget"
             class="currency-input"
             inputmode="numeric"
