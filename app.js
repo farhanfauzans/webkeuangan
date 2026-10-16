@@ -1,4 +1,4 @@
-const cats = [
+const defaultCategories = [
   "Makanan & Minuman",
   "Transportasi",
   "Belanja",
@@ -7,6 +7,7 @@ const cats = [
   "Kesehatan",
   "Lainnya",
 ];
+let cats = [...defaultCategories];
 const base = {
   income: 8000000,
   budget: 5000000,
@@ -45,8 +46,18 @@ const base = {
   goals: [{ id: "g1", name: "Dana darurat", target: 12000000, saved: 4500000 }],
   categoryBudgets: { "Makanan & Minuman": 1500000, Transportasi: 500000 },
   recurring: [],
+  categories: [...defaultCategories],
 };
-let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || base;
+let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || structuredClone(base);
+let supabaseClient = null;
+let currentUser = null;
+let authMode = "login";
+function normalizeData() {
+  if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
+  data.categories = [...new Set([...(data.categories || defaultCategories), ...data.transactions.filter((x) => !x.income).map((x) => x.category)])];
+  cats = data.categories;
+}
+normalizeData();
 // Pendapatan dasar dari pengaturan bulanan tidak dihitung dua kali sebagai transaksi demo gaji.
 if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
 if (!data.transactions.some((x) => x.monthlyIncome)) {
@@ -57,9 +68,18 @@ const $ = (s) => document.querySelector(s),
   $$ = (s) => [...document.querySelectorAll(s)],
   money = (n) => "Rp" + new Intl.NumberFormat("id-ID").format(n || 0),
   number = (v) => Number(String(v).replace(/\D/g, "")) || 0,
-  save = () => {
+  save = async () => {
+    normalizeData();
     localStorage.setItem("ruangDanaPro", JSON.stringify(data));
     render();
+    if (supabaseClient && currentUser) {
+      const { error } = await supabaseClient.from("user_data").upsert({
+        user_id: currentUser.id,
+        data,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) toast("Data lokal tersimpan, tetapi sinkronisasi gagal.");
+    }
   };
 const icon = (c) =>
   ({
@@ -106,6 +126,7 @@ function render() {
   $("#expenseTotal").textContent = money(used);
   $("#savingsRate").textContent = `${Math.round(sp)}% tersisa`;
   $("#budgetLimit").textContent = money(data.budget);
+  $("#budgetRemaining").textContent = `Sisa ${money(Math.max(0, data.budget - used))} yang bisa dipakai`;
   $("#savingTotal").textContent = money(saved);
   $("#budgetProgressText").textContent = data.budget
     ? `${money(used)} terpakai`
@@ -118,6 +139,7 @@ function render() {
     todayUsed = sum(exp().filter((x) => x.date === todayKey)),
     dailyPct = data.dailyBudget ? Math.min(100, (todayUsed / data.dailyBudget) * 100) : 0;
   $("#dailyBudgetLimit").textContent = money(data.dailyBudget);
+  $("#dailyBudgetRemaining").textContent = `Sisa ${money(Math.max(0, data.dailyBudget - todayUsed))} yang bisa dipakai`;
   $("#dailyProgressText").textContent = data.dailyBudget ? `${money(todayUsed)} terpakai hari ini` : "Belum ada batas harian";
   $("#dailyPct").textContent = Math.round(dailyPct) + "%";
   $("#dailyBar").style.width = dailyPct + "%";
@@ -269,6 +291,7 @@ $("#openBudget").onclick = $("#openBudget2").onclick = () => {
 };
 $("#openGoal").onclick = () => modal("goalModal");
 $("#addCategoryBudget").onclick = () => modal("categoryModal");
+$("#addCategory").onclick = () => modal("newCategoryModal");
 $("#openRecurring").onclick = () => {
   renderRecurring();
   modal("recurringModal");
@@ -328,6 +351,20 @@ $("#categoryForm").onsubmit = (e) => {
   close("categoryModal");
   save();
   toast("Batas kategori disimpan");
+};
+$("#newCategoryForm").onsubmit = (e) => {
+  e.preventDefault();
+  const name = e.target.name.value.trim();
+  if (cats.some((category) => category.toLowerCase() === name.toLowerCase())) return toast("Kategori sudah ada");
+  data.categories.push(name);
+  e.target.reset();
+  close("newCategoryModal");
+  save();
+  options("#expenseCategory", true);
+  options("#budgetCategory");
+  options("#recurringCategory");
+  $("#filterCategory").innerHTML = '<option value="">Semua kategori</option>' + cats.map((x) => `<option>${x}</option>`).join("");
+  toast("Kategori berhasil ditambahkan");
 };
 $("#recurringForm").onsubmit = (e) => {
   e.preventDefault();
@@ -474,6 +511,59 @@ $("#resetData").onclick = () => {
     save();
   }
 };
+async function loadCloudData() {
+  const { data: row, error } = await supabaseClient.from("user_data").select("data").eq("user_id", currentUser.id).maybeSingle();
+  if (error) return toast("Gagal memuat data cloud.");
+  if (row?.data && Object.keys(row.data).length) data = row.data;
+  else await save();
+  normalizeData();
+  localStorage.setItem("ruangDanaPro", JSON.stringify(data));
+  options("#expenseCategory", true);
+  options("#budgetCategory");
+  options("#recurringCategory");
+  $("#filterCategory").innerHTML = '<option value="">Semua kategori</option>' + cats.map((x) => `<option>${x}</option>`).join("");
+  render();
+}
+function setAuthMessage(message = "") { $("#authMessage").textContent = message; }
+function setAuthenticated(user) {
+  currentUser = user;
+  $("#authScreen").classList.add("hidden");
+  loadCloudData();
+}
+async function initAuth() {
+  const config = window.SUPABASE_CONFIG;
+  if (!config || config.url.includes("PASTE_") || config.anonKey.includes("PASTE_")) {
+    setAuthMessage("Konfigurasi Supabase belum diisi. Lihat file supabase-config.js.");
+    return;
+  }
+  supabaseClient = window.supabase.createClient(config.url, config.anonKey);
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session?.user) setAuthenticated(session.user);
+}
+$("#authSwitch").onclick = () => {
+  authMode = authMode === "login" ? "signup" : "login";
+  $("#authTitle").textContent = authMode === "login" ? "Masuk ke akunmu" : "Buat akun baru";
+  $("#authHint").textContent = authMode === "login" ? "Masuk agar data keuanganmu tersimpan dan sama di semua perangkat." : "Daftar untuk menyimpan data keuanganmu secara privat di cloud.";
+  $("#authSubmit").textContent = authMode === "login" ? "Masuk" : "Daftar";
+  $("#authSwitch").textContent = authMode === "login" ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk";
+  $("#authForm").password.autocomplete = authMode === "login" ? "current-password" : "new-password";
+  setAuthMessage();
+};
+$("#authForm").onsubmit = async (e) => {
+  e.preventDefault();
+  if (!supabaseClient) return setAuthMessage("Isi konfigurasi Supabase terlebih dahulu.");
+  const email = e.target.email.value.trim(), password = e.target.password.value;
+  $("#authSubmit").disabled = true;
+  setAuthMessage();
+  const result = authMode === "login"
+    ? await supabaseClient.auth.signInWithPassword({ email, password })
+    : await supabaseClient.auth.signUp({ email, password });
+  $("#authSubmit").disabled = false;
+  if (result.error) return setAuthMessage(result.error.message);
+  if (result.data.user && !result.data.session) return setAuthMessage("Cek email untuk mengonfirmasi akun, lalu masuk.");
+  setAuthenticated(result.data.user);
+};
+initAuth();
 options("#expenseCategory", true);
 options("#budgetCategory");
 options("#recurringCategory");

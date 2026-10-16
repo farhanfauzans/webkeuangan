@@ -16,6 +16,19 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <section class="auth-screen" id="authScreen">
+      <form class="auth-card" id="authForm">
+        <div class="auth-brand"><span class="brand-mark">R</span><b>ruang<span>dana</span></b></div>
+        <p class="eyebrow">KEUANGAN PRIBADI</p>
+        <h1 id="authTitle">Masuk ke akunmu</h1>
+        <p class="subtitle" id="authHint">Masuk agar data keuanganmu tersimpan dan sama di semua perangkat.</p>
+        <label>Email<input required type="email" name="email" autocomplete="email" placeholder="nama@email.com" /></label>
+        <label>Kata sandi<input required type="password" name="password" autocomplete="current-password" minlength="6" placeholder="Minimal 6 karakter" /></label>
+        <button class="primary-button form-submit" id="authSubmit">Masuk</button>
+        <button class="text-button auth-switch" type="button" id="authSwitch">Belum punya akun? Daftar</button>
+        <p class="auth-message" id="authMessage"></p>
+      </form>
+    </section>
     <header class="mobile-topbar">
       <a class="brand" href="#dashboard"
         ><span class="brand-mark">R</span><span>ruang<span>dana</span></span></a
@@ -122,6 +135,7 @@
               <div>
                 <small>BATAS PENGELUARAN BULANAN</small
                 ><strong id="budgetLimit">Rp0</strong>
+                 <small class="remaining-budget" id="budgetRemaining">Sisa Rp0 yang bisa dipakai</small>
               </div>
             </div>
             <div class="progress-label">
@@ -136,6 +150,7 @@
               <div>
                 <small>BATAS UANG HARI INI</small
                 ><strong id="dailyBudgetLimit">Rp0</strong>
+                 <small class="remaining-budget" id="dailyBudgetRemaining">Sisa Rp0 yang bisa dipakai</small>
               </div>
             </div>
             <div class="progress-label">
@@ -262,8 +277,11 @@
             <h2>Batas per kategori</h2>
             <p>Atur batas agar belanja lebih terkendali.</p>
           </div>
-          <button class="outline-button" id="addCategoryBudget">
+          <button class="outline-button" id="addCategory">
             ＋ Tambah kategori
+          </button>
+          <button class="outline-button" id="addCategoryBudget">
+            ＋ Tambah batas kategori
           </button>
         </div>
         <div id="categoryBudgets" class="budget-category-grid"></div>
@@ -411,6 +429,15 @@
         ><button class="primary-button form-submit">Simpan target</button>
       </form>
     </div>
+    <div class="modal-backdrop" id="newCategoryModal">
+      <form class="modal" id="newCategoryForm">
+        <button type="button" class="close" data-close="newCategoryModal">×</button>
+        <p class="eyebrow">KATEGORI BARU</p>
+        <h2>Tambah kategori pengeluaran</h2>
+        <label>Nama kategori<input required name="name" maxlength="40" placeholder="Contoh: Pendidikan" /></label>
+        <button class="primary-button form-submit">Simpan kategori</button>
+      </form>
+    </div>
     <div class="modal-backdrop" id="categoryModal">
       <form class="modal" id="categoryForm">
         <button type="button" class="close" data-close="categoryModal">
@@ -468,6 +495,8 @@
       </form>
     </div>
     <div id="toast" class="toast"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
