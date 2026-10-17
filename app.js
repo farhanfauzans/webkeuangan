@@ -53,6 +53,9 @@ let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || structuredClone(b
 let supabaseClient = null;
 let currentUser = null;
 let authMode = "login";
+let chartVisibility = { income: true, expense: true };
+let chartPeriodMode = "month";
+let chartCustomMonthValue = new Date().toISOString().slice(0, 7);
 let selectedMonth = new Date().toISOString().slice(0, 7);
 function normalizeData() {
   if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
@@ -81,6 +84,18 @@ if (!data.transactions.some((x) => x.monthlyIncome)) {
 const $ = (s) => document.querySelector(s),
   $$ = (s) => [...document.querySelectorAll(s)],
   money = (n) => "Rp" + new Intl.NumberFormat("id-ID").format(n || 0),
+  compactMoney = (n) => {
+    if (!n) return "Rp0";
+    if (n >= 1000000) {
+      const val = (n / 1000000).toFixed(1).replace(".0", "").replace(".", ",");
+      return `${val}jt`;
+    }
+    if (n >= 1000) {
+      const val = (n / 1000).toFixed(0);
+      return `${val}rb`;
+    }
+    return "Rp" + n;
+  },
   number = (v) => Number(String(v).replace(/\D/g, "")) || 0,
   save = async () => {
     normalizeData();
@@ -133,44 +148,179 @@ function render() {
   const settings = getMonthSettings(), transactions = monthTransactions(), expenses = transactions.filter((transaction) => !transaction.income), incomes = transactions.filter((transaction) => transaction.income), used = sum(expenses), totalIncome = settings.income + sum(incomes.filter((transaction) => !transaction.monthlyIncome)), saved = totalIncome - used, bp = settings.budget ? Math.min(100, (used / settings.budget) * 100) : 0, sp = totalIncome ? Math.max(0, Math.min(100, (saved / totalIncome) * 100)) : 0;
   const previousDate = new Date(`${selectedMonth}-01T00:00:00`);
   previousDate.setMonth(previousDate.getMonth() - 1);
-  const previousUsed = sum(monthTransactions(previousDate.toISOString().slice(0, 7)).filter((transaction) => !transaction.income));
+  const previousMonthKey = previousDate.toISOString().slice(0, 7);
+  const previousUsed = sum(monthTransactions(previousMonthKey).filter((transaction) => !transaction.income));
   const change = previousUsed ? Math.round(((used - previousUsed) / previousUsed) * 100) : 0;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const isCurrentMonth = selectedMonth === todayKey.slice(0, 7);
+  const daysLeft = daysRemaining(selectedMonth);
+  const remainingBudget = Math.max(0, settings.budget - used);
+  const safePerDay = Math.floor(remainingBudget / daysLeft);
+  const todayUsed = isCurrentMonth ? sum(expenses.filter((transaction) => transaction.date === todayKey)) : 0;
+  const dailyPct = settings.dailyBudget ? Math.min(100, (todayUsed / settings.dailyBudget) * 100) : 0;
+
   $("#summaryTitle").textContent = `Ringkasan ${monthLabel(selectedMonth)}`;
   $("#balance").textContent = money(saved);
+  if ($("#balancePeriod")) $("#balancePeriod").textContent = `Periode ${monthLabel(selectedMonth)} (pemasukan - pengeluaran)`;
   $("#incomeTotal").textContent = money(totalIncome);
   $("#expenseTotal").textContent = money(used);
   $("#savingsRate").textContent = `${Math.round(sp)}% tersisa`;
+
+  // Safe daily spend card
+  if ($("#safeDailySpend")) {
+    $("#safeDailySpend").textContent = money(safePerDay);
+    $("#safeDailySpendHint").textContent = !settings.budget
+      ? "Belum ada anggaran bulanan"
+      : isCurrentMonth
+      ? `Sisa ${money(remainingBudget)} dibagi ${daysLeft} hari tersisa`
+      : `Rata-rata aman untuk ${monthLabel(selectedMonth)}`;
+    $("#daysRemainingBadge").textContent = `${daysLeft} hari lagi`;
+
+    let safeStatusText = "✓ Pengeluaran hari ini masih aman";
+    let safeState = "safe";
+    if (!settings.budget) {
+      safeStatusText = "Atur batas bulanan untuk melihat jatah aman";
+      safeState = "safe";
+    } else if (isCurrentMonth && todayUsed > safePerDay) {
+      safeStatusText = `⚠️ Terpakai ${money(todayUsed)} (melewati jatah ${money(safePerDay)})`;
+      safeState = "danger";
+    } else if (isCurrentMonth && todayUsed > safePerDay * 0.75) {
+      safeStatusText = `⚠️ Terpakai ${money(todayUsed)} (mendekati jatah ${money(safePerDay)})`;
+      safeState = "warning";
+    } else if (isCurrentMonth) {
+      safeStatusText = `✓ Terpakai ${money(todayUsed)} dari jatah ${money(safePerDay)}`;
+      safeState = "safe";
+    } else {
+      safeStatusText = `Bulan riwayat (${monthLabel(selectedMonth)})`;
+      safeState = "safe";
+    }
+    $("#safeDailySpendStatus").textContent = safeStatusText;
+    const safePct = safePerDay ? Math.min(100, Math.round((todayUsed / safePerDay) * 100)) : 0;
+    $("#safeSpendBar").style.width = safePct + "%";
+    $("#safeSpendBar").dataset.state = safeState;
+  }
+
+  // Monthly budget card
   $("#budgetLimit").textContent = money(settings.budget);
-  $("#budgetRemaining").textContent = `Sisa ${money(Math.max(0, settings.budget - used))} yang bisa dipakai`;
+  $("#budgetRemaining").textContent = `Sisa ${money(remainingBudget)} yang bisa dipakai`;
   $("#savingTotal").textContent = money(saved);
   $("#budgetProgressText").textContent = settings.budget
-    ? `${money(used)} terpakai · ${daysRemaining()} hari tersisa`
+    ? `${money(used)} terpakai · ${daysLeft} hari tersisa`
     : "Belum ada anggaran";
   $("#budgetPct").textContent = Math.round(bp) + "%";
   $("#savingPct").textContent = Math.round(sp) + "%";
   $("#budgetBar").style.width = bp + "%";
   $("#savingBar").style.width = sp + "%";
-  const todayKey = new Date().toISOString().slice(0, 10), isCurrentMonth = selectedMonth === todayKey.slice(0, 7), todayUsed = isCurrentMonth ? sum(expenses.filter((transaction) => transaction.date === todayKey)) : 0, dailyPct = settings.dailyBudget ? Math.min(100, (todayUsed / settings.dailyBudget) * 100) : 0;
+
+  // Daily budget card
   $("#dailyBudgetLimit").textContent = money(settings.dailyBudget);
   $("#dailyBudgetRemaining").textContent = `Sisa ${money(Math.max(0, settings.dailyBudget - todayUsed))} yang bisa dipakai`;
-  $("#dailyProgressText").textContent = !isCurrentMonth ? "Batas harian hanya untuk bulan berjalan" : settings.dailyBudget ? `${money(todayUsed)} terpakai hari ini` : "Belum ada batas harian";
+  $("#dailyProgressText").textContent = !isCurrentMonth
+    ? "Batas harian hanya untuk bulan berjalan"
+    : settings.dailyBudget
+    ? `${money(todayUsed)} terpakai hari ini`
+    : "Belum ada batas harian";
   $("#dailyPct").textContent = Math.round(dailyPct) + "%";
   $("#dailyBar").style.width = dailyPct + "%";
-  $("#dailyBar").style.background = dailyPct >= 90 ? "#df765d" : "";
-  $("#budgetLarge").textContent = money(settings.budget);
-  $("#budgetExplanation").textContent = settings.budget
-    ? `${money(used)} terpakai. Sisa ${money(Math.max(0, settings.budget - used))}; rata-rata aman ${money(Math.floor(Math.max(0, settings.budget - used) / daysRemaining()))}/hari untuk ${daysRemaining()} hari.`
-    : "Belum ada anggaran yang ditetapkan.";
-  $("#budgetBarLarge").style.width = bp + "%";
+
+  // Budget states
   const budgetState = bp >= 100 ? "danger" : bp >= 75 ? "warning" : "safe";
-  ["#budgetBar", "#dailyBar", "#budgetBarLarge"].forEach((selector) => $(selector).dataset.state = budgetState);
-  $("#insightText").textContent = bp >= 100 ? "Batas bulanan sudah terlampaui. Tahan pengeluaran yang tidak mendesak." : bp >= 75 ? `Sisa ${money(Math.max(0, settings.budget - used))}. Batas bulanan mulai menipis.` : previousUsed ? `Pengeluaran ${change <= 0 ? "turun" : "naik"} ${Math.abs(change)}% dibanding bulan lalu.` : `Kamu masih memiliki ${money(saved)} untuk ditabung atau dialokasikan.`;
-  $("#notificationDot").style.display = bp >= 75 ? "block" : "none";
+  const dailyState = dailyPct >= 100 ? "danger" : dailyPct >= 75 ? "warning" : "safe";
+  $("#budgetBar").dataset.state = budgetState;
+  $("#dailyBar").dataset.state = dailyState;
+  if ($("#budgetBarLarge")) {
+    $("#budgetLarge").textContent = money(settings.budget);
+    $("#budgetExplanation").textContent = settings.budget
+      ? `${money(used)} terpakai. Sisa ${money(remainingBudget)}; rata-rata aman ${money(safePerDay)}/hari untuk ${daysLeft} hari.`
+      : "Belum ada anggaran yang ditetapkan.";
+    $("#budgetBarLarge").style.width = bp + "%";
+    $("#budgetBarLarge").dataset.state = budgetState;
+  }
+
+  // Analytics chips & prioritized alerts
+  const daysElapsed = isCurrentMonth ? Math.max(1, new Date().getDate()) : daysInMonth(selectedMonth);
+  const avgDailyExpense = Math.round(used / daysElapsed);
+  const maxExpense = expenses.length ? Math.max(...expenses.map((e) => e.amount)) : 0;
+  const categoryTotals = {};
+  expenses.forEach((x) => { categoryTotals[x.category] = (categoryTotals[x.category] || 0) + x.amount; });
+  const topCatEntry = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
+  const topCatName = topCatEntry ? topCatEntry[0] : "-";
+  const topCatAmount = topCatEntry ? topCatEntry[1] : 0;
+
+  if ($("#kpiChips")) {
+    $("#kpiChips").innerHTML = `
+      <span class="kpi-chip">🛍 Kategori terbesar: <b>${topCatName} (${money(topCatAmount)})</b></span>
+      <span class="kpi-chip">📅 Rata-rata belanja: <b>${money(avgDailyExpense)}/hari</b></span>
+      <span class="kpi-chip">⚡ Belanja tertinggi: <b>${money(maxExpense)}</b></span>
+      <span class="kpi-chip">${previousUsed ? (change <= 0 ? `📉 Turun ${Math.abs(change)}% vs bln lalu` : `📈 Naik ${change}% vs bln lalu`) : "📊 Belum ada data bulan lalu"}</span>
+    `;
+  }
+
+  const alerts = [];
+  if (bp >= 100) {
+    alerts.push({
+      type: "danger",
+      text: `🚨 Batas bulanan terlampaui ${money(used - settings.budget)} (${Math.round(bp)}%). Tahan pengeluaran yang tidak mendesak.`
+    });
+  } else if (bp >= 75) {
+    alerts.push({
+      type: "warning",
+      text: `⚠️ Anggaran bulanan telah terpakai ${Math.round(bp)}% (tersisa ${money(remainingBudget)}). Prioritaskan kebutuhan pokok.`
+    });
+  } else if (settings.budget) {
+    alerts.push({
+      type: "safe",
+      text: `✓ Anggaran bulanan aman: sisa ${money(remainingBudget)} (${Math.round(100 - bp)}% tersisa untuk ${daysLeft} hari).`
+    });
+  }
+
+  if (isCurrentMonth && settings.dailyBudget && todayUsed > settings.dailyBudget) {
+    alerts.push({
+      type: "danger",
+      text: `⚠️ Belanja hari ini (${money(todayUsed)}) melebihi batas harian (${money(settings.dailyBudget)}).`
+    });
+  } else if (isCurrentMonth && safePerDay && todayUsed > safePerDay) {
+    alerts.push({
+      type: "warning",
+      text: `⚠️ Belanja hari ini (${money(todayUsed)}) melebihi jatah aman harian (${money(safePerDay)}).`
+    });
+  }
+
+  const breachedCategory = Object.entries(settings.categoryBudgets || {}).find(([c, limit]) => {
+    const cUsed = sum(expenses.filter((x) => x.category === c));
+    return limit && cUsed >= limit;
+  });
+  if (breachedCategory && alerts.length < 3) {
+    const cUsed = sum(expenses.filter((x) => x.category === breachedCategory[0]));
+    alerts.push({
+      type: "danger",
+      text: `⚠️ Kategori "${breachedCategory[0]}" melebihi batas (${money(cUsed)} dari ${money(breachedCategory[1])}).`
+    });
+  }
+
+  if (alerts.length < 2 && previousUsed) {
+    alerts.push({
+      type: change > 20 ? "warning" : "safe",
+      text: change <= 0
+        ? `📉 Pengeluaran bulan ini lebih hemat ${Math.abs(change)}% dibanding bulan lalu.`
+        : `📈 Pengeluaran bulan ini naik ${change}% dibanding bulan lalu. Pantau sisa alokasi.`
+    });
+  }
+
+  if ($("#dashboardAlerts")) {
+    $("#dashboardAlerts").innerHTML = alerts
+      .slice(0, 3)
+      .map((a) => `<li class="alert-${a.type}">${a.text}</li>`)
+      .join("");
+  }
+
+  $("#notificationDot").style.display = bp >= 75 || (isCurrentMonth && settings.dailyBudget && todayUsed > settings.dailyBudget) ? "block" : "none";
   renderCategories(expenses);
   renderTx();
   renderBudgets();
   renderGoals();
   renderChart();
+  attachChartEvents();
 }
 function renderCategories(expenses = monthTransactions().filter((transaction) => !transaction.income)) {
   let o = {};
@@ -236,13 +386,247 @@ function renderGoals() {
       .join("") ||
     '<div class="empty-state">Belum ada target. Mulai dengan satu tujuan kecil hari ini.</div>';
 }
+let currentChartDailyData = [];
+function getChartDates() {
+  const dates = [];
+  if (chartPeriodMode === "7d") {
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+  } else {
+    let targetMonth = selectedMonth;
+    if (chartPeriodMode === "prevMonth") {
+      const d = new Date(`${selectedMonth}-01T00:00:00`);
+      d.setMonth(d.getMonth() - 1);
+      targetMonth = d.toISOString().slice(0, 7);
+    } else if (chartPeriodMode === "customMonth") {
+      targetMonth = chartCustomMonthValue || selectedMonth;
+    }
+    const days = daysInMonth(targetMonth);
+    for (let day = 1; day <= days; day++) {
+      dates.push(`${targetMonth}-${String(day).padStart(2, "0")}`);
+    }
+  }
+  return dates;
+}
 function renderChart() {
-  $("#chartBars").innerHTML = [0.28, 0.48, 0.35, 0.72, 0.42, 0.63, 0.5]
-    .map(
-      (v, i) =>
-        `<div class="bar-group"><span class="bar income-bar" style="height:${v * 100}%"></span><span class="bar expense-bar" style="height:${(v * 0.65 + (i % 2) * 0.12) * 100}%"></span></div>`,
-    )
-    .join("");
+  if (!$("#cashflowSvg")) return;
+  const dates = getChartDates();
+  currentChartDailyData = dates.map((d) => {
+    const dayTx = data.transactions.filter((x) => x.date === d);
+    const inc = sum(dayTx.filter((x) => x.income));
+    const exp = sum(dayTx.filter((x) => !x.income));
+    return {
+      date: d,
+      income: inc,
+      expense: exp,
+      net: inc - exp,
+    };
+  });
+
+  const dailyData = currentChartDailyData;
+  const n = dailyData.length;
+  if (!n) return;
+
+  const rawMax = Math.max(100000, ...dailyData.map((d) => Math.max(d.income, d.expense)));
+  const step = Math.ceil(rawMax / 4 / 50000) * 50000;
+  const maxVal = Math.max(100000, step * 4);
+
+  const padLeft = 60, padRight = 20, padTop = 20, padBottom = 32;
+  const chartW = 640 - padLeft - padRight;
+  const chartH = 230 - padTop - padBottom;
+
+  const getX = (i) => padLeft + (i / Math.max(1, n - 1)) * chartW;
+  const getY = (val) => padTop + chartH - (val / maxVal) * chartH;
+
+  let gridSvg = "";
+  for (let s = 0; s <= 4; s++) {
+    const val = (s / 4) * maxVal;
+    const y = getY(val);
+    gridSvg += `
+      <line x1="${padLeft}" y1="${y}" x2="${padLeft + chartW}" y2="${y}" stroke="currentColor" stroke-opacity="0.12" stroke-dasharray="3 3"/>
+      <text x="${padLeft - 8}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="#788c89">${compactMoney(val)}</text>
+    `;
+  }
+
+  let xLabelsSvg = "";
+  const labelStep = n <= 8 ? 1 : n <= 16 ? 2 : Math.ceil(n / 6);
+  for (let i = 0; i < n; i++) {
+    if (i === 0 || i === n - 1 || i % labelStep === 0) {
+      const x = getX(i);
+      const dObj = new Date(dailyData[i].date + "T00:00:00");
+      const labelText = chartPeriodMode === "7d"
+        ? dObj.toLocaleDateString("id-ID", { day: "numeric", month: "short" })
+        : String(dObj.getDate()).padStart(2, "0");
+      xLabelsSvg += `<text x="${x}" y="${padTop + chartH + 18}" text-anchor="middle" font-size="10" fill="#788c89">${labelText}</text>`;
+    }
+  }
+
+  let pathsSvg = "";
+  if (chartVisibility.income) {
+    const incPoints = dailyData.map((d, i) => `${getX(i)},${getY(d.income)}`).join(" ");
+    const incArea = `M ${getX(0)},${padTop + chartH} L ${incPoints} L ${getX(n - 1)},${padTop + chartH} Z`;
+    pathsSvg += `
+      <path d="${incArea}" fill="url(#incomeGrad)"/>
+      <polyline points="${incPoints}" fill="none" stroke="#1f9288" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    `;
+  }
+
+  if (chartVisibility.expense) {
+    const expPoints = dailyData.map((d, i) => `${getX(i)},${getY(d.expense)}`).join(" ");
+    const expArea = `M ${getX(0)},${padTop + chartH} L ${expPoints} L ${getX(n - 1)},${padTop + chartH} Z`;
+    pathsSvg += `
+      <path d="${expArea}" fill="url(#expenseGrad)"/>
+      <polyline points="${expPoints}" fill="none" stroke="#df7055" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    `;
+  }
+
+  $("#cashflowSvg").innerHTML = `
+    <defs>
+      <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1f9288" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="#1f9288" stop-opacity="0.0"/>
+      </linearGradient>
+      <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#df7055" stop-opacity="0.22"/>
+        <stop offset="100%" stop-color="#df7055" stop-opacity="0.0"/>
+      </linearGradient>
+    </defs>
+    ${gridSvg}
+    ${xLabelsSvg}
+    ${pathsSvg}
+    <g id="chartInteractiveGroup"></g>
+  `;
+
+  const totalInc = sum(dailyData.map((d) => d.income));
+  const totalExp = sum(dailyData.map((d) => d.expense));
+  const netCash = totalInc - totalExp;
+  const maxIncItem = dailyData.reduce((prev, curr) => (curr.income > prev.income ? curr : prev), { income: 0, date: "" });
+  const maxExpItem = dailyData.reduce((prev, curr) => (curr.expense > prev.expense ? curr : prev), { expense: 0, date: "" });
+  const avgExp = Math.round(totalExp / dailyData.length);
+
+  if ($("#chartSummaryCards")) {
+    $("#chartSummaryCards").innerHTML = `
+      <div class="chart-kpi-item">
+        <small>PEMASUKAN TERTINGGI</small>
+        <strong style="color:#1f9288">${money(maxIncItem.income)}</strong>
+        <small>${maxIncItem.income ? date(maxIncItem.date) : "Tidak ada transaksi"}</small>
+      </div>
+      <div class="chart-kpi-item">
+        <small>PENGELUARAN TERTINGGI</small>
+        <strong style="color:#df7055">${money(maxExpItem.expense)}</strong>
+        <small>${maxExpItem.expense ? date(maxExpItem.date) : "Tidak ada transaksi"}</small>
+      </div>
+      <div class="chart-kpi-item">
+        <small>RATA-RATA HARIAN</small>
+        <strong>${money(avgExp)}/hari</strong>
+        <small>Total belanja ${money(totalExp)}</small>
+      </div>
+      <div class="chart-kpi-item">
+        <small>ARUS KAS BERSIH</small>
+        <strong style="color:${netCash > 0 ? '#1f9288' : netCash < 0 ? '#df7055' : 'inherit'}">${netCash > 0 ? '+' : ''}${money(netCash)}</strong>
+        <small>${netCash > 0 ? 'Surplus keuangan' : netCash < 0 ? 'Defisit keuangan' : 'Seimbang'}</small>
+      </div>
+    `;
+  }
+
+  if ($("#chartDataTable tbody")) {
+    $("#chartDataTable tbody").innerHTML = dailyData
+      .map(
+        (d) => `
+          <tr>
+            <td><b>${date(d.date)}</b></td>
+            <td style="color:#1f9288">${d.income ? '+' + money(d.income) : 'Rp0'}</td>
+            <td style="color:#df7055">${d.expense ? '-' + money(d.expense) : 'Rp0'}</td>
+            <td style="font-weight:700; color:${d.net >= 0 ? '#1f9288' : '#df7055'}">${d.net >= 0 ? '+' : ''}${money(d.net)}</td>
+          </tr>
+        `
+      )
+      .join("");
+  }
+}
+function attachChartEvents() {
+  const svg = $("#cashflowSvg");
+  const tooltip = $("#chartTooltip");
+  if (!svg || !tooltip || svg.dataset.eventsAttached) return;
+  svg.dataset.eventsAttached = "true";
+
+  const padLeft = 60, padRight = 20, padTop = 20, padBottom = 32;
+  const chartW = 640 - padLeft - padRight;
+  const chartH = 230 - padTop - padBottom;
+
+  const handlePointer = (e) => {
+    if (!currentChartDailyData.length) return;
+    const rect = svg.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const relativeX = clientX - rect.left;
+    const svgX = (relativeX / rect.width) * 640;
+
+    const n = currentChartDailyData.length;
+    const fraction = Math.max(0, Math.min(1, (svgX - padLeft) / chartW));
+    const index = Math.round(fraction * (n - 1));
+    const item = currentChartDailyData[index];
+    if (!item) return;
+
+    const rawMax = Math.max(100000, ...currentChartDailyData.map((d) => Math.max(d.income, d.expense)));
+    const step = Math.ceil(rawMax / 4 / 50000) * 50000;
+    const maxVal = Math.max(100000, step * 4);
+
+    const getX = (i) => padLeft + (i / Math.max(1, n - 1)) * chartW;
+    const getY = (val) => padTop + chartH - (val / maxVal) * chartH;
+    const x = getX(index);
+    const yInc = getY(item.income);
+    const yExp = getY(item.expense);
+
+    const group = $("#chartInteractiveGroup");
+    if (group) {
+      let circles = "";
+      if (chartVisibility.income) {
+        circles += `<circle cx="${x}" cy="${yInc}" r="5" fill="#fff" stroke="#1f9288" stroke-width="2.5"/>`;
+      }
+      if (chartVisibility.expense) {
+        circles += `<circle cx="${x}" cy="${yExp}" r="5" fill="#fff" stroke="#df7055" stroke-width="2.5"/>`;
+      }
+      group.innerHTML = `
+        <line x1="${x}" y1="${padTop}" x2="${x}" y2="${padTop + chartH}" stroke="#8cb5ae" stroke-width="1.5" stroke-dasharray="3 3"/>
+        ${circles}
+      `;
+    }
+
+    const tooltipLeft = Math.max(85, Math.min(rect.width - 85, (x / 640) * rect.width));
+    const minY = Math.min(yInc, yExp);
+    const tooltipTop = Math.max(15, (minY / 230) * rect.height);
+
+    tooltip.style.left = `${tooltipLeft}px`;
+    tooltip.style.top = `${tooltipTop}px`;
+    tooltip.innerHTML = `
+      <div class="chart-tooltip-date">${new Date(item.date + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>
+      <div class="chart-tooltip-row"><span>Pemasukan:</span><b style="color:#2ec4b6">+${money(item.income)}</b></div>
+      <div class="chart-tooltip-row"><span>Pengeluaran:</span><b style="color:#ff8566">-${money(item.expense)}</b></div>
+      <div class="chart-tooltip-net"><span>Arus bersih:</span><b style="color:${item.net > 0 ? '#48cfb2' : item.net < 0 ? '#ff8566' : '#fff'}">${item.net > 0 ? '+' : ''}${money(item.net)}</b></div>
+    `;
+    tooltip.classList.add("show");
+    tooltip.setAttribute("aria-hidden", "false");
+  };
+
+  const hidePointer = () => {
+    const group = $("#chartInteractiveGroup");
+    if (group) group.innerHTML = "";
+    tooltip.classList.remove("show");
+    tooltip.setAttribute("aria-hidden", "true");
+  };
+
+  svg.addEventListener("mousemove", handlePointer);
+  svg.addEventListener("mouseleave", hidePointer);
+  svg.addEventListener("touchstart", (e) => { handlePointer(e); }, { passive: true });
+  svg.addEventListener("touchmove", (e) => { handlePointer(e); }, { passive: true });
+  document.addEventListener("touchstart", (e) => {
+    if (!svg.contains(e.target) && !tooltip.contains(e.target)) hidePointer();
+  });
 }
 function modal(id) {
   $("#" + id).classList.add("open");
@@ -484,7 +868,42 @@ document.body.onclick = (e) => {
 };
 $("#dashboardMonth").value = selectedMonth;
 $("#transactionMonth").value = selectedMonth;
+if ($("#chartCustomMonth")) $("#chartCustomMonth").value = chartCustomMonthValue;
 $("#dashboardMonth").onchange = $("#transactionMonth").onchange = (event) => { selectedMonth = event.target.value || new Date().toISOString().slice(0, 7); $("#dashboardMonth").value = selectedMonth; $("#transactionMonth").value = selectedMonth; render(); };
+if ($("#toggleIncomeLine")) {
+  $("#toggleIncomeLine").onclick = () => {
+    chartVisibility.income = !chartVisibility.income;
+    $("#toggleIncomeLine").classList.toggle("active", chartVisibility.income);
+    $("#toggleIncomeLine").setAttribute("aria-pressed", String(chartVisibility.income));
+    renderChart();
+  };
+}
+if ($("#toggleExpenseLine")) {
+  $("#toggleExpenseLine").onclick = () => {
+    chartVisibility.expense = !chartVisibility.expense;
+    $("#toggleExpenseLine").classList.toggle("active", chartVisibility.expense);
+    $("#toggleExpenseLine").setAttribute("aria-pressed", String(chartVisibility.expense));
+    renderChart();
+  };
+}
+if ($("#chartPeriod")) {
+  $("#chartPeriod").onchange = (e) => {
+    chartPeriodMode = e.target.value;
+    if (chartPeriodMode === "customMonth") {
+      $("#chartCustomMonth").style.display = "inline-block";
+      $("#chartCustomMonth").value = chartCustomMonthValue;
+    } else {
+      $("#chartCustomMonth").style.display = "none";
+    }
+    renderChart();
+  };
+}
+if ($("#chartCustomMonth")) {
+  $("#chartCustomMonth").onchange = (e) => {
+    chartCustomMonthValue = e.target.value || new Date().toISOString().slice(0, 7);
+    renderChart();
+  };
+}
 $("#expenseForm").type.onchange = refreshCategoryInputs;
 $$('[data-quick-amount]').forEach((button) => button.onclick = () => { $("#expenseForm").amount.value = money(+button.dataset.quickAmount); });
 $("#searchTx").oninput = renderTx;

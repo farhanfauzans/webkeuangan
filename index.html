@@ -99,9 +99,9 @@
         <div class="balance-card">
           <div class="balance-top">
             <div>
-              <p>SALDO TERSEDIA</p>
+              <p>SISA UANG BULAN INI</p>
               <h2 id="balance">Rp0</h2>
-              <span class="balance-month">Bulan berjalan</span>
+              <span class="balance-month" id="balancePeriod">Pemasukan dikurangi pengeluaran</span>
             </div>
             <span class="wallet-icon">◒</span>
           </div>
@@ -149,6 +149,21 @@
             </div>
             <div class="progress-track"><i id="budgetBar"></i></div>
           </article>
+          <article class="progress-card safe-spend-card">
+            <div class="card-title">
+              <span class="icon-box teal">◎</span>
+              <div>
+                <small>AMAN DIBELANJAKAN HARI INI</small>
+                <strong id="safeDailySpend">Rp0</strong>
+                <small class="remaining-budget" id="safeDailySpendHint">Berdasarkan sisa batas bulanan</small>
+              </div>
+            </div>
+            <div class="progress-label">
+              <span id="safeDailySpendStatus">Status pengeluaran aman</span>
+              <b id="daysRemainingBadge">0 hari</b>
+            </div>
+            <div class="progress-track"><i id="safeSpendBar"></i></div>
+          </article>
           <article class="progress-card">
             <div class="card-title">
               <span class="icon-box teal">⏱</span>
@@ -180,32 +195,56 @@
               <i id="savingBar"></i>
             </div>
           </article>
-          <article class="insight-card">
+          <article class="insight-card dashboard-kpi-card">
             <span>✦</span>
             <div>
-              <strong>Pengingat cerdas</strong>
-              <p id="insightText"></p>
+              <strong>Analisis & Pengingat Penting</strong>
+              <div class="kpi-chips" id="kpiChips"></div>
+              <ul class="dashboard-alerts" id="dashboardAlerts"></ul>
             </div>
           </article>
         </div>
         <section class="content-grid">
           <article class="panel chart-panel">
-            <div class="panel-head">
+            <div class="panel-head chart-head">
               <div>
-                <h2>Arus kas</h2>
-                <p>Aktivitas transaksi tujuh hari terakhir.</p>
+                <h2>Arus kas harian</h2>
+                <p>Grafik garis pemasukan dan pengeluaran dari data transaksi.</p>
+              </div>
+              <div class="chart-controls">
+                <select id="chartPeriod" aria-label="Filter periode grafik">
+                  <option value="7d">7 hari terakhir</option>
+                  <option value="month" selected>Bulan ini</option>
+                  <option value="prevMonth">Bulan lalu</option>
+                  <option value="customMonth">Pilih bulan...</option>
+                </select>
+                <input type="month" id="chartCustomMonth" class="chart-month-input" style="display:none;" aria-label="Pilih bulan grafik" />
               </div>
             </div>
-            <div class="chart-wrap">
-              <div class="axis">
-                <span>tinggi</span><span>sedang</span><span>rendah</span>
+            <div class="chart-legend-row" role="group" aria-label="Legenda grafik">
+              <button type="button" class="legend-chip active" id="toggleIncomeLine" data-line="income" aria-pressed="true">
+                <i class="legend-dot income"></i><span>Pemasukan</span>
+              </button>
+              <button type="button" class="legend-chip active" id="toggleExpenseLine" data-line="expense" aria-pressed="true">
+                <i class="legend-dot expense"></i><span>Pengeluaran</span>
+              </button>
+            </div>
+            <div class="line-chart-shell">
+              <svg id="cashflowSvg" viewBox="0 0 640 230" preserveAspectRatio="none" role="img" aria-label="Grafik garis arus kas harian"></svg>
+              <div class="chart-tooltip" id="chartTooltip" role="tooltip" aria-hidden="true"></div>
+            </div>
+            <div class="chart-summary-cards" id="chartSummaryCards"></div>
+            <details class="chart-table-accordion">
+              <summary>Lihat tabel data arus kas (alternatif aksesibel)</summary>
+              <div class="chart-table-wrap">
+                <table class="chart-data-table" id="chartDataTable">
+                  <thead>
+                    <tr><th>Tanggal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Arus Bersih</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
               </div>
-              <div class="bars" id="chartBars"></div>
-            </div>
-            <div class="legend">
-              <span><i class="legend-income"></i>Pemasukan</span
-              ><span><i class="legend-expense"></i>Pengeluaran</span>
-            </div>
+            </details>
           </article>
           <article class="panel category-panel">
             <div class="panel-head">
