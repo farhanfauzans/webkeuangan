@@ -7,6 +7,7 @@ const defaultCategories = [
   "Kesehatan",
   "Lainnya",
 ];
+const defaultIncomeCategories = ["Pemasukan", "Bonus", "Freelance"];
 let cats = [...defaultCategories];
 const base = {
   income: 8000000,
@@ -52,11 +53,24 @@ let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || structuredClone(b
 let supabaseClient = null;
 let currentUser = null;
 let authMode = "login";
+let selectedMonth = new Date().toISOString().slice(0, 7);
 function normalizeData() {
   if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
-  data.categories = [...new Set([...(data.categories || defaultCategories), ...data.transactions.filter((x) => !x.income).map((x) => x.category)])];
-  cats = data.categories;
+  data.transactions ||= [];
+  data.goals ||= [];
+  data.recurring ||= [];
+  const legacyCategories = [...(data.categories || defaultCategories), ...data.transactions.map((x) => x.category), ...defaultIncomeCategories];
+  data.categories = legacyCategories.map((category) => typeof category === "string" ? { name: category, type: defaultIncomeCategories.includes(category) ? "income" : "expense", icon: category === "Pemasukan" ? "↓" : "•", color: "#1f9288" } : category)
+    .filter((category, index, list) => category?.name && list.findIndex((item) => item.name.toLowerCase() === category.name.toLowerCase()) === index);
+  data.transactions.forEach((transaction) => { if (transaction.note === undefined) transaction.note = ""; });
+  data.monthSettings ||= {};
+  cats = data.categories.filter((category) => category.type === "expense").map((category) => category.name);
 }
+const monthLabel = (month) => new Date(`${month}-01T00:00:00`).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+const monthTransactions = (month = selectedMonth) => data.transactions.filter((transaction) => transaction.date?.slice(0, 7) === month);
+const getMonthSettings = (month = selectedMonth) => data.monthSettings[month] || { income: data.income || 0, budget: data.budget || 0, dailyBudget: data.dailyBudget || 0, categoryBudgets: data.categoryBudgets || {} };
+const daysInMonth = (month = selectedMonth) => new Date(+month.slice(0, 4), +month.slice(5, 7), 0).getDate();
+const daysRemaining = (month = selectedMonth) => month === new Date().toISOString().slice(0, 7) ? Math.max(1, daysInMonth(month) - new Date().getDate() + 1) : daysInMonth(month);
 normalizeData();
 // Pendapatan dasar dari pengaturan bulanan tidak dihitung dua kali sebagai transaksi demo gaji.
 if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
@@ -78,20 +92,14 @@ const $ = (s) => document.querySelector(s),
         data,
         updated_at: new Date().toISOString(),
       });
-      if (error) toast("Data lokal tersimpan, tetapi sinkronisasi gagal.");
+      if (error) { setSyncStatus("error", "Perubahan tersimpan lokal, tetapi gagal dikirim ke cloud."); toast("Data lokal tersimpan, tetapi sinkronisasi gagal."); }
+      else setSyncStatus("synced", `Terakhir tersinkron ${new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`);
     }
   };
-const icon = (c) =>
-  ({
-    "Makanan & Minuman": "☕",
-    Transportasi: "⌁",
-    Belanja: "◈",
-    Tagihan: "▤",
-    Hiburan: "♫",
-    Kesehatan: "✚",
-    Pemasukan: "↓",
-    Lainnya: "•",
-  })[c] || "•";
+const icon = (name) => {
+  return data.categories?.find((category) => category.name === name)?.icon || "•";
+};
+const categoryColor = (name) => data.categories?.find((category) => category.name === name)?.color || "#1f9288";
 const date = (d) =>
   new Date(d + "T00:00:00").toLocaleDateString("id-ID", {
     day: "numeric",
@@ -110,75 +118,80 @@ function toast(t) {
   $("#toast").classList.add("show");
   setTimeout(() => $("#toast").classList.remove("show"), 3200);
 }
-function options(id, includeIncome = false) {
-  $(id).innerHTML = (includeIncome ? ["Pemasukan", ...cats] : cats)
-    .map((x) => `<option>${x}</option>`)
-    .join("");
+function options(id, type = "expense") {
+  const categories = data.categories.filter((category) => category.type === type).map((category) => category.name);
+  $(id).innerHTML = categories.map((name) => `<option>${name}</option>`).join("");
+}
+function refreshCategoryInputs() {
+  const expenseType = $("#expenseForm").type.value;
+  options("#expenseCategory", expenseType);
+  options("#budgetCategory", "expense");
+  options("#recurringCategory", "expense");
+  $("#filterCategory").innerHTML = '<option value="">Semua kategori</option>' + data.categories.map((category) => `<option>${category.name}</option>`).join("");
 }
 function render() {
-  const used = sum(exp()),
-    totalIncome = data.income + sum(inc().filter((x) => !x.monthlyIncome)),
-    saved = totalIncome - used,
-    bp = data.budget ? Math.min(100, (used / data.budget) * 100) : 0,
-    sp = totalIncome ? Math.max(0, Math.min(100, (saved / totalIncome) * 100)) : 0;
+  const settings = getMonthSettings(), transactions = monthTransactions(), expenses = transactions.filter((transaction) => !transaction.income), incomes = transactions.filter((transaction) => transaction.income), used = sum(expenses), totalIncome = settings.income + sum(incomes.filter((transaction) => !transaction.monthlyIncome)), saved = totalIncome - used, bp = settings.budget ? Math.min(100, (used / settings.budget) * 100) : 0, sp = totalIncome ? Math.max(0, Math.min(100, (saved / totalIncome) * 100)) : 0;
+  const previousDate = new Date(`${selectedMonth}-01T00:00:00`);
+  previousDate.setMonth(previousDate.getMonth() - 1);
+  const previousUsed = sum(monthTransactions(previousDate.toISOString().slice(0, 7)).filter((transaction) => !transaction.income));
+  const change = previousUsed ? Math.round(((used - previousUsed) / previousUsed) * 100) : 0;
+  $("#summaryTitle").textContent = `Ringkasan ${monthLabel(selectedMonth)}`;
   $("#balance").textContent = money(saved);
   $("#incomeTotal").textContent = money(totalIncome);
   $("#expenseTotal").textContent = money(used);
   $("#savingsRate").textContent = `${Math.round(sp)}% tersisa`;
-  $("#budgetLimit").textContent = money(data.budget);
-  $("#budgetRemaining").textContent = `Sisa ${money(Math.max(0, data.budget - used))} yang bisa dipakai`;
+  $("#budgetLimit").textContent = money(settings.budget);
+  $("#budgetRemaining").textContent = `Sisa ${money(Math.max(0, settings.budget - used))} yang bisa dipakai`;
   $("#savingTotal").textContent = money(saved);
-  $("#budgetProgressText").textContent = data.budget
-    ? `${money(used)} terpakai`
+  $("#budgetProgressText").textContent = settings.budget
+    ? `${money(used)} terpakai · ${daysRemaining()} hari tersisa`
     : "Belum ada anggaran";
   $("#budgetPct").textContent = Math.round(bp) + "%";
   $("#savingPct").textContent = Math.round(sp) + "%";
   $("#budgetBar").style.width = bp + "%";
   $("#savingBar").style.width = sp + "%";
-  const todayKey = new Date().toISOString().slice(0, 10),
-    todayUsed = sum(exp().filter((x) => x.date === todayKey)),
-    dailyPct = data.dailyBudget ? Math.min(100, (todayUsed / data.dailyBudget) * 100) : 0;
-  $("#dailyBudgetLimit").textContent = money(data.dailyBudget);
-  $("#dailyBudgetRemaining").textContent = `Sisa ${money(Math.max(0, data.dailyBudget - todayUsed))} yang bisa dipakai`;
-  $("#dailyProgressText").textContent = data.dailyBudget ? `${money(todayUsed)} terpakai hari ini` : "Belum ada batas harian";
+  const todayKey = new Date().toISOString().slice(0, 10), isCurrentMonth = selectedMonth === todayKey.slice(0, 7), todayUsed = isCurrentMonth ? sum(expenses.filter((transaction) => transaction.date === todayKey)) : 0, dailyPct = settings.dailyBudget ? Math.min(100, (todayUsed / settings.dailyBudget) * 100) : 0;
+  $("#dailyBudgetLimit").textContent = money(settings.dailyBudget);
+  $("#dailyBudgetRemaining").textContent = `Sisa ${money(Math.max(0, settings.dailyBudget - todayUsed))} yang bisa dipakai`;
+  $("#dailyProgressText").textContent = !isCurrentMonth ? "Batas harian hanya untuk bulan berjalan" : settings.dailyBudget ? `${money(todayUsed)} terpakai hari ini` : "Belum ada batas harian";
   $("#dailyPct").textContent = Math.round(dailyPct) + "%";
   $("#dailyBar").style.width = dailyPct + "%";
   $("#dailyBar").style.background = dailyPct >= 90 ? "#df765d" : "";
-  $("#budgetLarge").textContent = money(data.budget);
-  $("#budgetExplanation").textContent = data.budget
-    ? `${money(used)} telah digunakan dari batas bulanan.`
+  $("#budgetLarge").textContent = money(settings.budget);
+  $("#budgetExplanation").textContent = settings.budget
+    ? `${money(used)} terpakai. Sisa ${money(Math.max(0, settings.budget - used))}; rata-rata aman ${money(Math.floor(Math.max(0, settings.budget - used) / daysRemaining()))}/hari untuk ${daysRemaining()} hari.`
     : "Belum ada anggaran yang ditetapkan.";
   $("#budgetBarLarge").style.width = bp + "%";
-  $("#insightText").textContent =
-    bp >= 90
-      ? "Batas anggaran hampir habis. Tunda belanja yang tidak mendesak."
-      : `Kamu masih memiliki ${money(saved)} untuk ditabung atau dialokasikan.`;
-  $("#notificationDot").style.display = bp >= 80 ? "block" : "none";
-  renderCategories();
+  const budgetState = bp >= 100 ? "danger" : bp >= 75 ? "warning" : "safe";
+  ["#budgetBar", "#dailyBar", "#budgetBarLarge"].forEach((selector) => $(selector).dataset.state = budgetState);
+  $("#insightText").textContent = bp >= 100 ? "Batas bulanan sudah terlampaui. Tahan pengeluaran yang tidak mendesak." : bp >= 75 ? `Sisa ${money(Math.max(0, settings.budget - used))}. Batas bulanan mulai menipis.` : previousUsed ? `Pengeluaran ${change <= 0 ? "turun" : "naik"} ${Math.abs(change)}% dibanding bulan lalu.` : `Kamu masih memiliki ${money(saved)} untuk ditabung atau dialokasikan.`;
+  $("#notificationDot").style.display = bp >= 75 ? "block" : "none";
+  renderCategories(expenses);
   renderTx();
   renderBudgets();
   renderGoals();
   renderChart();
 }
-function renderCategories() {
+function renderCategories(expenses = monthTransactions().filter((transaction) => !transaction.income)) {
   let o = {};
-  exp().forEach((x) => (o[x.category] = (o[x.category] || 0) + x.amount));
+  expenses.forEach((x) => (o[x.category] = (o[x.category] || 0) + x.amount));
   let rows = Object.entries(o).sort((a, b) => b[1] - a[1]),
     max = rows[0]?.[1] || 1;
   $("#categoryList").innerHTML = rows.length
     ? rows
         .map(
           ([c, n]) =>
-            `<div class="category-row"><span class="category-icon">${icon(c)}</span><div><b>${c}</b><small>${Math.round((n / sum(exp())) * 100)}% dari total</small></div><strong>${money(n)}</strong><div class="mini-bar"><i style="width:${(n / max) * 100}%"></i></div></div>`,
+            `<div class="category-row"><span class="category-icon">${icon(c)}</span><div><b>${c}</b><small>${Math.round((n / sum(expenses)) * 100)}% dari total</small></div><strong>${money(n)}</strong><div class="mini-bar"><i style="width:${(n / max) * 100}%"></i></div></div>`,
         )
         .join("")
     : '<p class="subtitle">Belum ada pengeluaran.</p>';
 }
 function txHTML(x) {
-  return `<div class="transaction-row"><span class="tx-icon">${icon(x.category)}</span><div><div class="tx-name">${x.name}</div><div class="tx-meta">${x.category} · ${date(x.date)}</div></div><strong class="tx-amount ${x.income ? "positive-amount" : "negative"}">${x.income ? "+" : "-"}${money(x.amount)}</strong><div class="tx-actions"><button data-edit="${x.id}" title="Ubah">✎</button><button data-delete="${x.id}" title="Hapus">×</button></div></div>`;
+  return `<div class="transaction-row"><span class="tx-icon" style="background:${categoryColor(x.category)}22">${icon(x.category)}</span><div><div class="tx-name">${x.name}</div><div class="tx-meta">${x.category} · ${date(x.date)}${x.note ? ` · ${x.note}` : ""}</div></div><strong class="tx-amount ${x.income ? "positive-amount" : "negative"}">${x.income ? "+" : "-"}${money(x.amount)}</strong><div class="tx-actions"><button data-edit="${x.id}" title="Ubah">✎</button><button data-duplicate="${x.id}" title="Duplikat">⧉</button><button data-delete="${x.id}" title="Hapus">×</button></div></div>`;
 }
 function renderTx() {
-  let tx = [...data.transactions].sort((a, b) => b.date.localeCompare(a.date));
+  let tx = [...monthTransactions()].sort((a, b) => b.date.localeCompare(a.date));
+  const allTx = [...data.transactions].sort((a, b) => b.date.localeCompare(a.date));
   $("#recentTransactions").innerHTML =
     tx.slice(0, 4).map(txHTML).join("") ||
     '<p class="subtitle">Belum ada transaksi.</p>';
@@ -188,12 +201,13 @@ function renderTx() {
     from = $("#filterFrom").value,
     to = $("#filterTo").value;
   $("#allTransactions").innerHTML =
-    tx
+    allTx
       .filter(
         (x) =>
           x.name.toLowerCase().includes(q) &&
           (!c || x.category === c) &&
           (!type || (type === "income") === !!x.income) &&
+          (!$("#transactionMonth").value || x.date.slice(0, 7) === $("#transactionMonth").value) &&
           (!from || x.date >= from) &&
           (!to || x.date <= to),
       )
@@ -201,10 +215,11 @@ function renderTx() {
       .join("") || '<p class="subtitle">Tidak ada transaksi yang cocok.</p>';
 }
 function renderBudgets() {
+  const settings = getMonthSettings();
   $("#categoryBudgets").innerHTML =
-    Object.entries(data.categoryBudgets)
+    Object.entries(settings.categoryBudgets || {})
       .map(([c, l]) => {
-        let used = sum(exp().filter((x) => x.category === c)),
+        let used = sum(monthTransactions().filter((x) => !x.income && x.category === c)),
           p = Math.min(100, (used / l) * 100);
         return `<article class="budget-item"><div><span>${icon(c)}</span><b>${c}</b><button data-remove-budget="${c}">×</button></div><strong>${money(used)} <small>/ ${money(l)}</small></strong><div class="progress-track"><i style="width:${p}%"></i></div><p>${Math.round(p)}% digunakan</p></article>`;
       })
@@ -215,8 +230,8 @@ function renderGoals() {
   $("#goalList").innerHTML =
     data.goals
       .map((g) => {
-        let p = Math.min(100, (g.saved / g.target) * 100);
-        return `<article class="goal-card"><button data-delete-goal="${g.id}">×</button><span class="goal-icon">◎</span><h3>${g.name}</h3><strong>${money(g.saved)}</strong><small>dari ${money(g.target)}</small><div class="progress-track purple-track"><i style="width:${p}%"></i></div><p>${Math.round(p)}% tercapai</p></article>`;
+        let p = Math.min(100, (g.saved / g.target) * 100), targetDate = g.deadline ? new Date(`${g.deadline}T00:00:00`) : null, monthsLeft = targetDate ? Math.max(1, (targetDate.getFullYear() - new Date().getFullYear()) * 12 + targetDate.getMonth() - new Date().getMonth()) : 0, monthly = Math.ceil(Math.max(0, g.target - g.saved) / (monthsLeft || 1));
+        return `<article class="goal-card"><button data-delete-goal="${g.id}">×</button><span class="goal-icon">◎</span><h3>${g.name}</h3><strong>${money(g.saved)}</strong><small>dari ${money(g.target)}</small><div class="progress-track purple-track"><i style="width:${p}%"></i></div><p>${Math.round(p)}% tercapai</p>${g.deadline ? `<small>Target ${date(g.deadline)} · Sisihkan ${money(monthly)}/bulan</small>` : ""}<button class="outline-button goal-deposit" data-deposit-goal="${g.id}">＋ Setor</button></article>`;
       })
       .join("") ||
     '<div class="empty-state">Belum ada target. Mulai dengan satu tujuan kecil hari ini.</div>';
@@ -278,20 +293,23 @@ $("#openExpense").onclick = () => {
   let f = $("#expenseForm");
   f.reset();
   f.id.value = "";
+  refreshCategoryInputs();
+  f.type.value = "expense";
+  refreshCategoryInputs();
   f.date.value = new Date().toISOString().slice(0, 10);
   $("#expenseTitle").textContent = "Catat transaksi";
   modal("expenseModal");
 };
 $("#openBudget").onclick = $("#openBudget2").onclick = () => {
-  let f = $("#budgetForm");
-  f.income.value = money(data.income);
-  f.budget.value = money(data.budget);
-  f.dailyBudget.value = data.dailyBudget ? money(data.dailyBudget) : "";
+  let f = $("#budgetForm"), settings = getMonthSettings();
+  f.income.value = money(settings.income);
+  f.budget.value = money(settings.budget);
+  f.dailyBudget.value = settings.dailyBudget ? money(settings.dailyBudget) : "";
   modal("budgetModal");
 };
 $("#openGoal").onclick = () => modal("goalModal");
 $("#addCategoryBudget").onclick = () => modal("categoryModal");
-$("#addCategory").onclick = () => modal("newCategoryModal");
+$("#addCategory").onclick = $("#addCategory2").onclick = () => openCategoryEditor();
 $("#openRecurring").onclick = () => {
   renderRecurring();
   modal("recurringModal");
@@ -316,17 +334,26 @@ $("#expenseForm").onsubmit = (e) => {
       date: f.date.value,
       income: f.type.value === "income",
     };
-  if (old) Object.assign(old, x);
-  else data.transactions.push(x);
+  x.note = f.note.value.trim();
+  const receiptFile = f.receiptFile.files[0];
+  if (receiptFile) {
+    const reader = new FileReader();
+    reader.onload = () => { x.receipt = reader.result; completeTransactionSave(x, old, id); };
+    reader.readAsDataURL(receiptFile);
+    return;
+  }
+  completeTransactionSave(x, old, id);
+};
+function completeTransactionSave(transaction, old, id) {
+  if (old) Object.assign(old, transaction);
+  else data.transactions.push(transaction);
   close("expenseModal");
   save();
   toast(id ? "Transaksi berhasil diperbarui" : "Transaksi berhasil disimpan");
-};
+}
 $("#budgetForm").onsubmit = (e) => {
   e.preventDefault();
-  data.income = number(e.target.income.value);
-  data.budget = number(e.target.budget.value);
-  data.dailyBudget = number(e.target.dailyBudget.value);
+  data.monthSettings[selectedMonth] = { ...getMonthSettings(), income: number(e.target.income.value), budget: number(e.target.budget.value), dailyBudget: number(e.target.dailyBudget.value) };
   close("budgetModal");
   save();
   toast("Pengaturan bulanan disimpan");
@@ -339,6 +366,8 @@ $("#goalForm").onsubmit = (e) => {
     name: f.name.value,
     target: number(f.target.value),
     saved: number(f.saved.value),
+    deadline: f.deadline.value,
+    deposits: [],
   });
   f.reset();
   close("goalModal");
@@ -347,25 +376,40 @@ $("#goalForm").onsubmit = (e) => {
 };
 $("#categoryForm").onsubmit = (e) => {
   e.preventDefault();
-  data.categoryBudgets[e.target.category.value] = number(e.target.limit.value);
+  const settings = getMonthSettings();
+  settings.categoryBudgets ||= {};
+  settings.categoryBudgets[e.target.category.value] = number(e.target.limit.value);
+  data.monthSettings[selectedMonth] = settings;
   close("categoryModal");
   save();
   toast("Batas kategori disimpan");
 };
 $("#newCategoryForm").onsubmit = (e) => {
   e.preventDefault();
-  const name = e.target.name.value.trim();
-  if (cats.some((category) => category.toLowerCase() === name.toLowerCase())) return toast("Kategori sudah ada");
-  data.categories.push(name);
-  e.target.reset();
+  const form = e.target, name = form.name.value.trim(), originalName = form.originalName.value;
+  if (data.categories.some((category) => category.name.toLowerCase() === name.toLowerCase() && category.name !== originalName)) return toast("Kategori sudah ada");
+  if (originalName) {
+    const category = data.categories.find((item) => item.name === originalName);
+    Object.assign(category, { name, type: form.type.value, icon: form.icon.value.trim() || "•", color: form.color.value });
+    data.transactions.forEach((transaction) => { if (transaction.category === originalName) transaction.category = name; });
+    Object.values(data.monthSettings).forEach((settings) => { if (settings.categoryBudgets?.[originalName] !== undefined) { settings.categoryBudgets[name] = settings.categoryBudgets[originalName]; delete settings.categoryBudgets[originalName]; } });
+  } else data.categories.push({ name, type: form.type.value, icon: form.icon.value.trim() || "•", color: form.color.value });
+  form.reset(); form.originalName.value = "";
   close("newCategoryModal");
-  save();
-  options("#expenseCategory", true);
-  options("#budgetCategory");
-  options("#recurringCategory");
-  $("#filterCategory").innerHTML = '<option value="">Semua kategori</option>' + cats.map((x) => `<option>${x}</option>`).join("");
-  toast("Kategori berhasil ditambahkan");
+  refreshCategoryInputs(); save(); renderCategoryManager();
+  toast(originalName ? "Kategori berhasil diperbarui" : "Kategori berhasil ditambahkan");
 };
+function renderCategoryManager() {
+  $("#categoryManager").innerHTML = data.categories.map((category) => `<div class="category-manage-row"><span class="category-icon" style="background:${category.color}22">${category.icon}</span><div><b>${category.name}</b><small>${category.type === "income" ? "Pemasukan" : "Pengeluaran"}</small></div><div><button class="text-button" data-edit-category="${category.name}">Ubah</button><button class="text-button danger-text" data-delete-category="${category.name}">Hapus</button></div></div>`).join("") || '<p class="subtitle">Belum ada kategori.</p>';
+}
+function openCategoryEditor(name = "") {
+  const form = $("#newCategoryForm"), category = data.categories.find((item) => item.name === name);
+  form.reset();
+  $("#categoryMode").textContent = category ? "UBAH KATEGORI" : "KATEGORI BARU";
+  $("#categoryTitle").textContent = category ? "Ubah kategori" : "Tambah kategori";
+  if (category) { form.originalName.value = category.name; form.name.value = category.name; form.type.value = category.type; form.icon.value = category.icon; form.color.value = category.color; }
+  modal("newCategoryModal");
+}
 $("#recurringForm").onsubmit = (e) => {
   e.preventDefault();
   let f = e.target;
@@ -383,15 +427,30 @@ $("#recurringForm").onsubmit = (e) => {
   toast("Transaksi rutin ditambahkan");
 };
 document.body.onclick = (e) => {
-  let id = e.target.dataset.edit;
+  let id = e.target.dataset.editCategory;
+  if (id) { openCategoryEditor(id); return; }
+  if ((id = e.target.dataset.deleteCategory)) {
+    const hasTransactions = data.transactions.some((transaction) => transaction.category === id);
+    if (hasTransactions) return toast("Kategori masih dipakai transaksi. Ubah kategorinya dulu sebelum menghapus.");
+    if (confirm(`Hapus kategori ${id}?`)) { data.categories = data.categories.filter((category) => category.name !== id); refreshCategoryInputs(); save(); renderCategoryManager(); }
+    return;
+  }
+  if ((id = e.target.dataset.duplicate)) {
+    const source = data.transactions.find((transaction) => transaction.id === id);
+    if (source) { const copy = { ...source, id: crypto.randomUUID(), date: new Date().toISOString().slice(0, 10) }; data.transactions.push(copy); save(); toast("Transaksi berhasil diduplikat"); }
+    return;
+  }
+  id = e.target.dataset.edit;
   if (id) {
     let x = data.transactions.find((y) => y.id === id),
       f = $("#expenseForm");
     f.id.value = x.id;
     f.name.value = x.name;
-    f.category.value = x.category;
     f.type.value = x.income ? "income" : "expense";
+    refreshCategoryInputs();
+    f.category.value = x.category;
     f.amount.value = money(x.amount);
+    f.note.value = x.note || "";
     f.date.value = x.date;
     $("#expenseTitle").textContent = "Ubah transaksi";
     modal("expenseModal");
@@ -404,8 +463,14 @@ document.body.onclick = (e) => {
     }
   }
   if ((id = e.target.dataset.removeBudget)) {
-    delete data.categoryBudgets[id];
+    const settings = getMonthSettings();
+    delete settings.categoryBudgets[id];
+    data.monthSettings[selectedMonth] = settings;
     save();
+  }
+  if ((id = e.target.dataset.depositGoal)) {
+    const goal = data.goals.find((item) => item.id === id), amount = number(prompt(`Setor ke ${goal.name} (Rp)`));
+    if (amount) { goal.saved += amount; goal.deposits ||= []; goal.deposits.push({ id: crypto.randomUUID(), amount, date: new Date().toISOString().slice(0, 10) }); save(); toast("Setoran target berhasil disimpan"); }
   }
   if ((id = e.target.dataset.deleteGoal)) {
     data.goals = data.goals.filter((x) => x.id !== id);
@@ -417,6 +482,11 @@ document.body.onclick = (e) => {
     renderRecurring();
   }
 };
+$("#dashboardMonth").value = selectedMonth;
+$("#transactionMonth").value = selectedMonth;
+$("#dashboardMonth").onchange = $("#transactionMonth").onchange = (event) => { selectedMonth = event.target.value || new Date().toISOString().slice(0, 7); $("#dashboardMonth").value = selectedMonth; $("#transactionMonth").value = selectedMonth; render(); };
+$("#expenseForm").type.onchange = refreshCategoryInputs;
+$$('[data-quick-amount]').forEach((button) => button.onclick = () => { $("#expenseForm").amount.value = money(+button.dataset.quickAmount); });
 $("#searchTx").oninput = renderTx;
 $("#filterCategory").onchange =
   $("#filterType").onchange =
@@ -511,23 +581,32 @@ $("#resetData").onclick = () => {
     save();
   }
 };
+function setSyncStatus(state, detail = "") {
+  const labels = { saving: "● Menyimpan perubahan…", synced: "● Tersinkron", error: "● Gagal sinkron", offline: "● Belum tersinkron" };
+  $("#syncStatus").textContent = labels[state];
+  $("#syncStatus").dataset.state = state;
+  if (detail) $("#cloudStatusDetail").textContent = detail;
+}
 async function loadCloudData() {
+  setSyncStatus("saving", "Memuat data dari cloud…");
   const { data: row, error } = await supabaseClient.from("user_data").select("data").eq("user_id", currentUser.id).maybeSingle();
-  if (error) return toast("Gagal memuat data cloud.");
+  if (error) { setSyncStatus("error", "Data cloud gagal dimuat."); return toast("Gagal memuat data cloud."); }
   if (row?.data && Object.keys(row.data).length) data = row.data;
   else await save();
   normalizeData();
+  setSyncStatus("synced", "Data cloud berhasil dimuat.");
   localStorage.setItem("ruangDanaPro", JSON.stringify(data));
-  options("#expenseCategory", true);
-  options("#budgetCategory");
-  options("#recurringCategory");
-  $("#filterCategory").innerHTML = '<option value="">Semua kategori</option>' + cats.map((x) => `<option>${x}</option>`).join("");
+  refreshCategoryInputs();
+  renderCategoryManager();
   render();
 }
 function setAuthMessage(message = "") { $("#authMessage").textContent = message; }
 function setAuthenticated(user) {
   currentUser = user;
   $("#authScreen").classList.add("hidden");
+  $("#profileEmail").textContent = user.email || "Akun terhubung";
+  $("#profileName").textContent = user.email?.split("@")[0] || "RuangDana";
+  $("#profileAvatar").textContent = (user.email || "RD").slice(0, 2).toUpperCase();
   loadCloudData();
 }
 async function initAuth() {
@@ -539,6 +618,7 @@ async function initAuth() {
   supabaseClient = window.supabase.createClient(config.url, config.anonKey);
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (session?.user) setAuthenticated(session.user);
+  supabaseClient.auth.onAuthStateChange((_event, sessionState) => { if (sessionState?.user && !currentUser) setAuthenticated(sessionState.user); });
 }
 $("#authSwitch").onclick = () => {
   authMode = authMode === "login" ? "signup" : "login";
@@ -549,6 +629,10 @@ $("#authSwitch").onclick = () => {
   $("#authForm").password.autocomplete = authMode === "login" ? "current-password" : "new-password";
   setAuthMessage();
 };
+$("#syncNow").onclick = () => currentUser ? save().then(() => toast("Sinkronisasi selesai")) : toast("Silakan masuk terlebih dahulu");
+$("#logoutButton").onclick = async () => { if (supabaseClient) await supabaseClient.auth.signOut(); location.reload(); };
+$("#resetPassword").onclick = async () => { if (!supabaseClient || !currentUser?.email) return toast("Email akun belum tersedia"); const { error } = await supabaseClient.auth.resetPasswordForEmail(currentUser.email, { redirectTo: location.href }); toast(error ? "Gagal mengirim link reset" : "Link reset password dikirim ke emailmu"); };
+$("#changePassword").onclick = async () => { const password = prompt("Masukkan kata sandi baru (minimal 6 karakter):"); if (!password || password.length < 6 || !supabaseClient) return toast("Kata sandi minimal 6 karakter"); const { error } = await supabaseClient.auth.updateUser({ password }); toast(error ? "Gagal mengubah kata sandi" : "Kata sandi berhasil diubah"); };
 $("#authForm").onsubmit = async (e) => {
   e.preventDefault();
   if (!supabaseClient) return setAuthMessage("Isi konfigurasi Supabase terlebih dahulu.");
@@ -564,12 +648,8 @@ $("#authForm").onsubmit = async (e) => {
   setAuthenticated(result.data.user);
 };
 initAuth();
-options("#expenseCategory", true);
-options("#budgetCategory");
-options("#recurringCategory");
-$("#filterCategory").innerHTML =
-  '<option value="">Semua kategori</option>' +
-  cats.map((x) => `<option>${x}</option>`).join("");
+refreshCategoryInputs();
+renderCategoryManager();
 $("#today").textContent = new Date()
   .toLocaleDateString("id-ID", {
     weekday: "long",

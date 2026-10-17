@@ -68,10 +68,12 @@
           </div>
         </div>
         <button class="reset-button" id="resetData">↻ Reset data demo</button>
+        <div class="sync-status" id="syncStatus" data-state="offline">● Belum tersinkron</div>
         <div class="profile">
-          <div class="avatar">MF</div>
-          <div><strong>Farhan</strong><small>Keuangan pribadi</small></div>
+          <div class="avatar" id="profileAvatar">RD</div>
+          <div><strong id="profileName">RuangDana</strong><small id="profileEmail">Keuangan pribadi</small></div>
         </div>
+        <button class="reset-button logout-button" id="logoutButton">↪ Keluar dari akun</button>
       </div>
     </aside>
     <main>
@@ -121,12 +123,15 @@
         </div>
         <div class="section-heading">
           <div>
-            <h2>Ringkasan bulan ini</h2>
+            <h2 id="summaryTitle">Ringkasan bulan ini</h2>
             <p>Rencana keuangan yang sedang berjalan.</p>
           </div>
+          <div class="heading-actions">
+            <label class="month-picker">Bulan<input type="month" id="dashboardMonth" /></label>
           <button class="outline-button" id="openBudget">
-            ⚙ Atur bulan ini
+            ⚙ Atur anggaran
           </button>
+          </div>
         </div>
         <div class="overview-grid">
           <article class="progress-card">
@@ -231,6 +236,7 @@
           <div>
             <h2>Semua transaksi</h2>
             <p>Cari, ubah, atau hapus catatan keuanganmu.</p>
+            <label class="month-picker">Bulan transaksi<input type="month" id="transactionMonth" /></label>
           </div>
         </div>
         <div class="filters panel">
@@ -285,6 +291,8 @@
           </button>
         </div>
         <div id="categoryBudgets" class="budget-category-grid"></div>
+        <div class="section-heading mini-heading"><div><h2>Kelola kategori</h2><p>Ubah nama, ikon, warna, atau hapus kategori.</p></div><button class="outline-button" id="addCategory2">＋ Kategori baru</button></div>
+        <div id="categoryManager" class="category-manager panel"></div>
       </section>
       <section id="target" class="page">
         <div class="section-heading standalone">
@@ -302,6 +310,12 @@
             <h2>Pengaturan</h2>
             <p>Data, tampilan, dan pengingat keuangan.</p>
           </div>
+        </div>
+        <div class="cloud-tools panel">
+          <div><strong id="cloudStatusTitle">Status cloud</strong><p id="cloudStatusDetail">Data tersimpan di akunmu.</p></div>
+          <button class="outline-button" id="syncNow">↻ Sinkronkan sekarang</button>
+          <button class="outline-button" id="changePassword">Ubah kata sandi</button>
+          <button class="outline-button" id="resetPassword">Kirim link reset password</button>
         </div>
         <div class="settings-grid">
           <article class="panel setting-card">
@@ -347,7 +361,7 @@
         <button type="button" class="close" data-close="expenseModal">×</button>
         <p class="eyebrow" id="expenseMode">TRANSAKSI BARU</p>
         <h2 id="expenseTitle">Catat transaksi</h2>
-        <input type="hidden" name="id" /><label
+        <input type="hidden" name="id" /><input type="hidden" name="receipt" /><label
           >Nama transaksi<input
             required
             name="name"
@@ -369,8 +383,9 @@
             name="amount"
             class="currency-input"
             inputmode="numeric"
-            placeholder="Rp1.000.000" /></label
+            placeholder="Rp1.000.000" /></label><div class="quick-amounts"><button type="button" data-quick-amount="10000">10rb</button><button type="button" data-quick-amount="20000">20rb</button><button type="button" data-quick-amount="50000">50rb</button><button type="button" data-quick-amount="100000">100rb</button></div><label>Catatan <small>(opsional)</small><input name="note" maxlength="160" placeholder="Contoh: untuk rapat kantor" /></label>
         ><label>Tanggal<input required name="date" type="date" /></label
+        ><label>Foto struk <small>(opsional)</small><input name="receiptFile" type="file" accept="image/*" /></label
         ><button class="primary-button form-submit">Simpan transaksi</button>
       </form>
     </div>
@@ -426,15 +441,19 @@
             class="currency-input"
             inputmode="numeric"
             placeholder="Rp0" /></label
+        ><label>Target selesai <small>(opsional)</small><input name="deadline" type="date" /></label
         ><button class="primary-button form-submit">Simpan target</button>
       </form>
     </div>
     <div class="modal-backdrop" id="newCategoryModal">
       <form class="modal" id="newCategoryForm">
         <button type="button" class="close" data-close="newCategoryModal">×</button>
-        <p class="eyebrow">KATEGORI BARU</p>
-        <h2>Tambah kategori pengeluaran</h2>
+        <p class="eyebrow" id="categoryMode">KATEGORI BARU</p>
+        <h2 id="categoryTitle">Tambah kategori</h2>
+        <input type="hidden" name="originalName" />
         <label>Nama kategori<input required name="name" maxlength="40" placeholder="Contoh: Pendidikan" /></label>
+        <div class="form-row"><label>Jenis<select name="type"><option value="expense">Pengeluaran</option><option value="income">Pemasukan</option></select></label><label>Ikon<input name="icon" maxlength="2" value="•" /></label></div>
+        <label>Warna<input name="color" type="color" value="#1f9288" /></label>
         <button class="primary-button form-submit">Simpan kategori</button>
       </form>
     </div>
