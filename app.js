@@ -60,6 +60,7 @@ let selectedMonth = new Date().toISOString().slice(0, 7);
 let reportMonth = selectedMonth;
 let calendarMonth = selectedMonth;
 let activeQuickFilter = "all";
+let autoBudgetSaveQueued = false;
 function normalizeData() {
   if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
   data.transactions ||= [];
@@ -70,6 +71,14 @@ function normalizeData() {
     .filter((category, index, list) => category?.name && list.findIndex((item) => item.name.toLowerCase() === category.name.toLowerCase()) === index);
   data.transactions.forEach((transaction) => { if (transaction.note === undefined) transaction.note = ""; });
   data.monthSettings ||= {};
+  data.budgetTemplate ||= null;
+  data.goals.forEach((goal) => {
+    goal.deposits ||= [];
+    goal.priority ||= "medium";
+    goal.autoDeposit ||= 0;
+    goal.autoDepositConfirm = Boolean(goal.autoDepositConfirm);
+    goal.autoDepositLastMonth ||= "";
+  });
   data.recurring.forEach((item) => {
     item.frequency ||= "monthly";
     item.type ||= "expense";
@@ -81,7 +90,39 @@ function normalizeData() {
 }
 const monthLabel = (month) => new Date(`${month}-01T00:00:00`).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 const monthTransactions = (month = selectedMonth) => data.transactions.filter((transaction) => transaction.date?.slice(0, 7) === month);
-const getMonthSettings = (month = selectedMonth) => data.monthSettings[month] || { income: data.income || 0, budget: data.budget || 0, dailyBudget: data.dailyBudget || 0, categoryBudgets: data.categoryBudgets || {} };
+function ensureAutomaticMonthBudget(month = selectedMonth) {
+  if (data.monthSettings[month]) return;
+  const prevKey = previousMonthKey(month);
+  const prevSettings = data.monthSettings[prevKey];
+  const template = data.budgetTemplate;
+  const source = prevSettings?.autoBudget
+    ? prevSettings
+    : template?.autoBudget
+      ? { ...template, categoryBudgets: structuredClone(template.categoryBudgets || {}) }
+      : null;
+  if (!source) return;
+  const newSettings = structuredClone(source);
+  newSettings.rolloverAdded = false;
+  if (newSettings.rolloverBudget && prevSettings && !newSettings.rolloverAdded) {
+    const prevUsed = sum(monthTransactions(prevKey).filter((x) => !x.income));
+    const prevRemaining = Math.max(0, (prevSettings.budget || 0) - prevUsed);
+    if (prevRemaining > 0) {
+      newSettings.budget = (newSettings.budget || 0) + prevRemaining;
+      newSettings.rolloverAdded = true;
+      toast(`Rollover sisa ${money(prevRemaining)} ditambahkan ke anggaran ${monthLabel(month)}.`);
+    }
+  }
+  data.monthSettings[month] = newSettings;
+  if (!autoBudgetSaveQueued) {
+    autoBudgetSaveQueued = true;
+    queueMicrotask(() => {
+      autoBudgetSaveQueued = false;
+      save();
+    });
+  }
+}
+const defaultMonthSettings = () => ({ income: data.income || 0, budget: data.budget || 0, dailyBudget: data.dailyBudget || 0, categoryBudgets: structuredClone(data.categoryBudgets || {}), autoBudget: false, rolloverBudget: false, rolloverAdded: false });
+const getMonthSettings = (month = selectedMonth) => data.monthSettings[month] || defaultMonthSettings();
 const daysInMonth = (month = selectedMonth) => new Date(+month.slice(0, 4), +month.slice(5, 7), 0).getDate();
 const daysRemaining = (month = selectedMonth) => month === new Date().toISOString().slice(0, 7) ? Math.max(1, daysInMonth(month) - new Date().getDate() + 1) : daysInMonth(month);
 normalizeData();
@@ -155,6 +196,7 @@ function refreshCategoryInputs() {
   $("#filterCategory").innerHTML = '<option value="">Semua kategori</option>' + data.categories.map((category) => `<option>${category.name}</option>`).join("");
 }
 function render() {
+  ensureAutomaticMonthBudget(selectedMonth);
   const settings = getMonthSettings(), transactions = monthTransactions(), expenses = transactions.filter((transaction) => !transaction.income), incomes = transactions.filter((transaction) => transaction.income), used = sum(expenses), totalIncome = settings.income + sum(incomes.filter((transaction) => !transaction.monthlyIncome)), saved = totalIncome - used, bp = settings.budget ? Math.min(100, (used / settings.budget) * 100) : 0, sp = totalIncome ? Math.max(0, Math.min(100, (saved / totalIncome) * 100)) : 0;
   const previousDate = new Date(`${selectedMonth}-01T00:00:00`);
   previousDate.setMonth(previousDate.getMonth() - 1);
@@ -234,8 +276,9 @@ function render() {
   $("#dailyBar").style.width = dailyPct + "%";
 
   // Budget states
-  const budgetState = bp >= 100 ? "danger" : bp >= 75 ? "warning" : "safe";
-  const dailyState = dailyPct >= 100 ? "danger" : dailyPct >= 75 ? "warning" : "safe";
+  const budgetState = bp >= 100 ? "danger" : bp >= 90 ? "critical" : bp >= 75 ? "warning" : bp >= 50 ? "watch" : "safe";
+  const dailyState = dailyPct >= 100 ? "danger" : dailyPct >= 90 ? "critical" : dailyPct >= 75 ? "warning" : dailyPct >= 50 ? "watch" : "safe";
+  const budgetStatusLabels = { safe: "✓ Aman", watch: "! Perhatikan", warning: "⚠ Mendekati batas", critical: "⚠ Hampir habis", danger: "× Melebihi batas" };
   $("#budgetBar").dataset.state = budgetState;
   $("#dailyBar").dataset.state = dailyState;
   if ($("#budgetBarLarge")) {
@@ -245,6 +288,12 @@ function render() {
       : "Belum ada anggaran yang ditetapkan.";
     $("#budgetBarLarge").style.width = bp + "%";
     $("#budgetBarLarge").dataset.state = budgetState;
+  }
+  if ($("#budgetStatusLine")) {
+    $("#budgetStatusLine").innerHTML = `<span class="budget-status-badge ${budgetState}">${budgetStatusLabels[budgetState]}</span><span id="budgetStatusText">Terpakai ${Math.round(bp)}% dari batas bulanan</span>`;
+  }
+  if ($("#budgetPreferenceSummary")) {
+    $("#budgetPreferenceSummary").innerHTML = `<span>${settings.autoBudget ? "✓ Otomatis setiap bulan" : "○ Anggaran manual"}</span><span>${settings.rolloverBudget ? "✓ Rollover aktif" : "○ Rollover tidak aktif"}</span>${data.budgetTemplate ? `<span>☆ Template: ${data.budgetTemplate.name || "Anggaran utama"}</span>` : ""}`;
   }
 
   // Analytics chips & prioritized alerts
@@ -268,20 +317,15 @@ function render() {
 
   const alerts = [];
   if (bp >= 100) {
-    alerts.push({
-      type: "danger",
-      text: `🚨 Batas bulanan terlampaui ${money(used - settings.budget)} (${Math.round(bp)}%). Tahan pengeluaran yang tidak mendesak.`
-    });
+    alerts.push({ type: "danger", text: `🚨 Batas bulanan terlampaui ${money(used - settings.budget)} (${Math.round(bp)}%). Tahan pengeluaran yang tidak mendesak.` });
+  } else if (bp >= 90) {
+    alerts.push({ type: "danger", text: `⚠️ Anggaran hampir habis: ${Math.round(bp)}% sudah terpakai. Sisa ${money(remainingBudget)}.` });
   } else if (bp >= 75) {
-    alerts.push({
-      type: "warning",
-      text: `⚠️ Anggaran bulanan telah terpakai ${Math.round(bp)}% (tersisa ${money(remainingBudget)}). Prioritaskan kebutuhan pokok.`
-    });
+    alerts.push({ type: "warning", text: `⚠️ Anggaran bulanan telah terpakai ${Math.round(bp)}% (tersisa ${money(remainingBudget)}). Prioritaskan kebutuhan pokok.` });
+  } else if (bp >= 50) {
+    alerts.push({ type: "warning", text: `! Anggaran sudah terpakai ${Math.round(bp)}%. Pantau pengeluaran agar tetap sesuai rencana.` });
   } else if (settings.budget) {
-    alerts.push({
-      type: "safe",
-      text: `✓ Anggaran bulanan aman: sisa ${money(remainingBudget)} (${Math.round(100 - bp)}% tersisa untuk ${daysLeft} hari).`
-    });
+    alerts.push({ type: "safe", text: `✓ Anggaran bulanan aman: sisa ${money(remainingBudget)} (${Math.round(100 - bp)}% tersisa untuk ${daysLeft} hari).` });
   }
 
   if (isCurrentMonth && settings.dailyBudget && todayUsed > settings.dailyBudget) {
@@ -511,15 +555,65 @@ function renderBudgets() {
       .join("") ||
     '<p class="subtitle">Tambahkan batas per kategori untuk mulai mengontrol belanja.</p>';
 }
+function goalAnalysis(goal) {
+  const remaining = Math.max(0, goal.target - goal.saved);
+  const deposits = (goal.deposits || []).filter((deposit) => deposit.amount > 0);
+  const monthTotals = {};
+  deposits.forEach((deposit) => { const key = deposit.date?.slice(0, 7); if (key) monthTotals[key] = (monthTotals[key] || 0) + deposit.amount; });
+  const monthlyValues = Object.values(monthTotals);
+  const avgMonthly = monthlyValues.length ? Math.round(sum(monthlyValues) / monthlyValues.length) : 0;
+  const plannedMonthly = Number(goal.autoDeposit) || 0;
+  const monthlyRate = plannedMonthly || avgMonthly;
+  const today = new Date();
+  let monthsLeft = 0;
+  if (goal.deadline) {
+    const targetDate = new Date(`${goal.deadline}T00:00:00`);
+    monthsLeft = Math.max(1, (targetDate.getFullYear() - today.getFullYear()) * 12 + targetDate.getMonth() - today.getMonth());
+  }
+  const requiredMonthly = monthsLeft ? Math.ceil(remaining / monthsLeft) : 0;
+  const estimatedMonths = monthlyRate ? Math.ceil(remaining / monthlyRate) : 0;
+  let estimatedDate = "";
+  if (estimatedMonths) {
+    const d = new Date(today.getFullYear(), today.getMonth() + estimatedMonths, 1);
+    estimatedDate = isoDateLocal(d).slice(0, 7);
+  }
+  const unrealistic = Boolean(goal.deadline && (!monthlyRate || monthlyRate < requiredMonthly));
+  return { remaining, deposits, avgMonthly, monthlyRate, monthsLeft, requiredMonthly, estimatedMonths, estimatedDate, unrealistic };
+}
+function processAutomaticGoalDeposits() {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  let changed = false;
+  data.goals.forEach((goal) => {
+    const amount = Number(goal.autoDeposit) || 0;
+    if (!amount || goal.autoDepositLastMonth === currentMonth || (goal.deadline && currentMonth > goal.deadline.slice(0, 7))) return;
+    const addDeposit = () => {
+      const remaining = Math.max(0, (goal.target || 0) - (goal.saved || 0));
+      const depositAmount = Math.min(amount, remaining);
+      if (depositAmount) {
+        goal.saved = (goal.saved || 0) + depositAmount;
+        goal.deposits ||= [];
+        goal.deposits.push({ id: crypto.randomUUID(), amount: depositAmount, date: isoDateLocal(), automatic: true });
+        changed = true;
+      }
+      goal.autoDepositLastMonth = currentMonth;
+    };
+    if (goal.autoDepositConfirm) {
+      if (confirm(`Catat setoran otomatis ${goal.name} sebesar ${money(amount)} untuk ${monthLabel(currentMonth)}?`)) addDeposit();
+    } else addDeposit();
+  });
+  if (changed) save();
+}
 function renderGoals() {
-  $("#goalList").innerHTML =
-    data.goals
-      .map((g) => {
-        let p = Math.min(100, (g.saved / g.target) * 100), targetDate = g.deadline ? new Date(`${g.deadline}T00:00:00`) : null, monthsLeft = targetDate ? Math.max(1, (targetDate.getFullYear() - new Date().getFullYear()) * 12 + targetDate.getMonth() - new Date().getMonth()) : 0, monthly = Math.ceil(Math.max(0, g.target - g.saved) / (monthsLeft || 1));
-        return `<article class="goal-card"><button data-delete-goal="${g.id}">×</button><span class="goal-icon">◎</span><h3>${g.name}</h3><strong>${money(g.saved)}</strong><small>dari ${money(g.target)}</small><div class="progress-track purple-track"><i style="width:${p}%"></i></div><p>${Math.round(p)}% tercapai</p>${g.deadline ? `<small>Target ${date(g.deadline)} · Sisihkan ${money(monthly)}/bulan</small>` : ""}<button class="outline-button goal-deposit" data-deposit-goal="${g.id}">＋ Setor</button></article>`;
-      })
-      .join("") ||
-    '<div class="empty-state">Belum ada target. Mulai dengan satu tujuan kecil hari ini.</div>';
+  const sortedGoals = [...data.goals].sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1));
+  const priorityLabels = { high: "Tinggi", medium: "Sedang", low: "Rendah" };
+  $("#goalList").innerHTML = sortedGoals.map((g) => {
+    const analysis = goalAnalysis(g);
+    const p = g.target ? Math.min(100, ((g.saved || 0) / g.target) * 100) : 0;
+    const estimatedText = analysis.estimatedDate ? `Perkiraan selesai ${monthLabel(analysis.estimatedDate)}` : "Belum dapat diperkirakan";
+    const deadlineText = g.deadline ? `Target ${date(g.deadline)} · perlu ${money(analysis.requiredMonthly)}/bulan` : "Belum ada tanggal target";
+    const warning = analysis.unrealistic ? `<div class="goal-warning">⚠ Setoran ${analysis.monthlyRate ? money(analysis.monthlyRate) + "/bulan" : "belum diatur"} belum cukup untuk mengejar target.</div>` : "";
+    return `<article class="goal-card"><button data-delete-goal="${g.id}" aria-label="Hapus target">×</button><span class="goal-priority priority-${g.priority}">${priorityLabels[g.priority] || "Sedang"}</span><span class="goal-icon">◎</span><h3>${g.name}</h3><strong>${money(g.saved || 0)}</strong><small>dari ${money(g.target)}</small><div class="progress-track purple-track"><i style="width:${p}%"></i></div><p>${Math.round(p)}% tercapai · ${deadlineText}</p><div class="goal-estimate">${estimatedText}${analysis.monthlyRate ? ` · rata-rata ${money(analysis.monthlyRate)}/bulan` : ""}</div>${warning}<div class="goal-actions"><button class="outline-button goal-deposit" data-deposit-goal="${g.id}">＋ Setor</button><button class="text-button" data-history-goal="${g.id}">Riwayat (${analysis.deposits.length})</button></div><div class="goal-history" id="goalHistory-${g.id}" hidden></div></article>`;
+  }).join("") || '<div class="empty-state">Belum ada target. Mulai dengan satu tujuan kecil hari ini.</div>';
 }
 let currentChartDailyData = [];
 function getChartDates() {
@@ -825,9 +919,36 @@ $("#openBudget").onclick = $("#openBudget2").onclick = () => {
   f.income.value = money(settings.income);
   f.budget.value = money(settings.budget);
   f.dailyBudget.value = settings.dailyBudget ? money(settings.dailyBudget) : "";
+  f.autoBudget.checked = Boolean(settings.autoBudget);
+  f.rolloverBudget.checked = Boolean(settings.rolloverBudget);
   modal("budgetModal");
 };
 $("#openGoal").onclick = () => modal("goalModal");
+$("#copyPreviousBudget").onclick = () => {
+  const previousKey = previousMonthKey(selectedMonth);
+  const previous = data.monthSettings[previousKey] || getMonthSettings(previousKey);
+  if (!previous?.budget && !previous?.income) return toast("Belum ada anggaran di bulan sebelumnya untuk disalin.");
+  if (!confirm(`Salin anggaran ${monthLabel(previousKey)} ke ${monthLabel(selectedMonth)}?`)) return;
+  data.monthSettings[selectedMonth] = { ...structuredClone(previous), categoryBudgets: structuredClone(previous.categoryBudgets || {}), rolloverAdded: false };
+  save();
+  toast("Anggaran bulan lalu berhasil disalin");
+};
+$("#saveBudgetTemplate").onclick = () => {
+  const name = prompt("Nama template anggaran:", data.budgetTemplate?.name || "Anggaran utama");
+  if (!name?.trim()) return;
+  const settings = getMonthSettings();
+  data.budgetTemplate = { ...structuredClone(settings), name: name.trim(), categoryBudgets: structuredClone(settings.categoryBudgets || {}), rolloverAdded: false };
+  save();
+  toast("Template anggaran disimpan");
+};
+$("#applyBudgetTemplate").onclick = () => {
+  if (!data.budgetTemplate) return toast("Belum ada template anggaran yang disimpan.");
+  if (!confirm(`Gunakan template "${data.budgetTemplate.name}" untuk ${monthLabel(selectedMonth)}?`)) return;
+  data.monthSettings[selectedMonth] = { ...structuredClone(data.budgetTemplate), categoryBudgets: structuredClone(data.budgetTemplate.categoryBudgets || {}), rolloverAdded: false };
+  delete data.monthSettings[selectedMonth].name;
+  save();
+  toast("Template diterapkan ke anggaran bulan ini");
+};
 $("#addCategoryBudget").onclick = () => modal("categoryModal");
 $("#addCategory").onclick = $("#addCategory2").onclick = () => openCategoryEditor();
 $("#openRecurring").onclick = () => {
@@ -873,7 +994,15 @@ function completeTransactionSave(transaction, old, id) {
 }
 $("#budgetForm").onsubmit = (e) => {
   e.preventDefault();
-  data.monthSettings[selectedMonth] = { ...getMonthSettings(), income: number(e.target.income.value), budget: number(e.target.budget.value), dailyBudget: number(e.target.dailyBudget.value) };
+  data.monthSettings[selectedMonth] = {
+    ...getMonthSettings(),
+    income: number(e.target.income.value),
+    budget: number(e.target.budget.value),
+    dailyBudget: number(e.target.dailyBudget.value),
+    autoBudget: e.target.autoBudget.checked,
+    rolloverBudget: e.target.rolloverBudget.checked,
+    rolloverAdded: Boolean(getMonthSettings().rolloverAdded),
+  };
   close("budgetModal");
   save();
   toast("Pengaturan bulanan disimpan");
@@ -887,6 +1016,10 @@ $("#goalForm").onsubmit = (e) => {
     target: number(f.target.value),
     saved: number(f.saved.value),
     deadline: f.deadline.value,
+    priority: f.priority.value,
+    autoDeposit: number(f.autoDeposit.value),
+    autoDepositConfirm: f.autoDepositConfirm.checked,
+    autoDepositLastMonth: "",
     deposits: [],
   });
   f.reset();
@@ -995,11 +1128,24 @@ document.body.onclick = (e) => {
   }
   if ((id = e.target.dataset.depositGoal)) {
     const goal = data.goals.find((item) => item.id === id), amount = number(prompt(`Setor ke ${goal.name} (Rp)`));
-    if (amount) { goal.saved += amount; goal.deposits ||= []; goal.deposits.push({ id: crypto.randomUUID(), amount, date: new Date().toISOString().slice(0, 10) }); save(); toast("Setoran target berhasil disimpan"); }
+    if (amount) { goal.saved = Math.min(goal.target, (goal.saved || 0) + amount); goal.deposits ||= []; goal.deposits.push({ id: crypto.randomUUID(), amount, date: isoDateLocal(), automatic: false }); save(); toast("Setoran target berhasil disimpan"); }
+  }
+  if ((id = e.target.dataset.historyGoal)) {
+    const goal = data.goals.find((item) => item.id === id);
+    const history = $(`#goalHistory-${id}`);
+    if (goal && history) {
+      const deposits = [...(goal.deposits || [])].sort((a, b) => b.date.localeCompare(a.date));
+      history.hidden = !history.hidden;
+      history.innerHTML = deposits.length ? deposits.map((deposit) => `<div><span>${date(deposit.date)}${deposit.automatic ? " · otomatis" : ""}</span><strong>+${money(deposit.amount)}</strong></div>`).join("") : "<small>Belum ada riwayat setoran.</small>";
+    }
   }
   if ((id = e.target.dataset.deleteGoal)) {
-    data.goals = data.goals.filter((x) => x.id !== id);
-    save();
+    const goal = data.goals.find((item) => item.id === id);
+    if (goal && confirm(`Hapus target "${goal.name}"?`)) {
+      data.goals = data.goals.filter((x) => x.id !== id);
+      save();
+      toast("Target tabungan dihapus");
+    }
   }
   if ((id = e.target.dataset.removeRecurring)) {
     data.recurring = data.recurring.filter((x) => x.id !== id);
@@ -1276,6 +1422,7 @@ $("#authForm").onsubmit = async (e) => {
   setAuthenticated(result.data.user);
 };
 generateRecurringTransactions();
+processAutomaticGoalDeposits();
 initAuth();
 refreshCategoryInputs();
 renderCategoryManager();

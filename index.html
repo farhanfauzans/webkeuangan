@@ -383,8 +383,18 @@
             <h3>Target pengeluaran</h3>
             <strong id="budgetLarge">Rp0</strong>
             <p id="budgetExplanation"></p>
+            <div class="budget-status-line" id="budgetStatusLine"><span class="budget-status-badge safe">✓ Aman</span><span id="budgetStatusText">Belum ada anggaran</span></div>
           </div>
           <div class="big-progress"><i id="budgetBarLarge"></i></div>
+        </div>
+        <div class="budget-tools panel">
+          <div class="budget-tools-copy"><strong>Otomatisasi anggaran</strong><p id="budgetAutomationHint">Atur template dan penerapan anggaran bulanan agar tidak perlu mengisi ulang.</p></div>
+          <div class="budget-tools-actions">
+            <button class="outline-button" id="copyPreviousBudget">↶ Salin bulan lalu</button>
+            <button class="outline-button" id="saveBudgetTemplate">☆ Simpan sebagai template</button>
+            <button class="outline-button" id="applyBudgetTemplate">▣ Gunakan template</button>
+          </div>
+          <div class="budget-preference-summary" id="budgetPreferenceSummary"></div>
         </div>
         <div class="section-heading mini-heading">
           <div>
@@ -523,6 +533,9 @@
             class="currency-input"
             inputmode="numeric"
             placeholder="Rp150.000" /></label
+        ><label class="checkbox-label"><input name="autoBudget" type="checkbox" /> Otomatis terapkan setiap awal bulan baru</label
+        ><label class="checkbox-label"><input name="rolloverBudget" type="checkbox" /> Aktifkan rollover sisa anggaran (sisa bulan lalu menambah batas bulan ini)</label
+        ><p class="form-helper">Otomatis memakai template bila tersedia. Rollover hanya ditambahkan satu kali saat anggaran bulan baru dibuat.</p>
         ><button class="primary-button form-submit">Simpan pengaturan</button>
       </form>
     </div>
@@ -550,6 +563,8 @@
             inputmode="numeric"
             placeholder="Rp0" /></label
         ><label>Target selesai <small>(opsional)</small><input name="deadline" type="date" /></label
+        ><div class="form-row"><label>Prioritas<select name="priority"><option value="high">Tinggi</option><option value="medium" selected>Sedang</option><option value="low">Rendah</option></select></label><label>Setoran otomatis / bulan <small>(opsional)</small><input name="autoDeposit" class="currency-input" inputmode="numeric" placeholder="Rp0" /></label></div
+        ><label class="checkbox-label"><input name="autoDepositConfirm" type="checkbox" /> Minta konfirmasi sebelum setoran otomatis dicatat</label
         ><button class="primary-button form-submit">Simpan target</button>
       </form>
     </div>

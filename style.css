@@ -34,6 +34,7 @@ body.dark {
 .dark .panel,
 .dark .progress-card,
 .dark .budget-page-card,
+.dark .budget-tools,
 .dark .modal,
 .dark .filters {
   background: #1b2c2c;
@@ -60,6 +61,7 @@ body.dark {
 /* Semua permukaan komponen mengikuti palet mode gelap agar tidak menyilaukan. */
 .dark .budget-item,
 .dark .goal-card,
+.dark .budget-tools,
 .dark .setting-card,
 .dark .empty-state,
 .dark .notification,
@@ -126,7 +128,9 @@ body.dark {
 .danger-text { color: #d86954; margin-left: 8px; }
 .goal-deposit { margin-top: 13px; width: 100%; }
 .progress-track i[data-state="safe"], .big-progress i[data-state="safe"] { background: #35a891; }
+.progress-track i[data-state="watch"], .big-progress i[data-state="watch"] { background: #c39c36; }
 .progress-track i[data-state="warning"], .big-progress i[data-state="warning"] { background: #e7ae46; }
+.progress-track i[data-state="critical"], .big-progress i[data-state="critical"] { background: #e48b4d; }
 .progress-track i[data-state="danger"], .big-progress i[data-state="danger"] { background: #df765d; }
 .mobile-topbar { display: none; }
 .sidebar-backdrop { display: none; }
@@ -529,6 +533,17 @@ h3 {
   font-size: 10px;
   margin-top: 3px;
 }
+.goal-priority { display: inline-flex !important; border-radius: 99px; padding: 4px 8px; font-weight: 700; margin-bottom: 10px; }
+.priority-high { color: #a63f2b !important; background: #fdf1ed; }
+.priority-medium { color: #876016 !important; background: #fff8e9; }
+.priority-low { color: #1e7063 !important; background: #eef9f5; }
+.goal-estimate { margin-top: 9px; color: var(--teal-dark); font-size: 10px; line-height: 1.4; }
+.goal-warning { margin-top: 9px; padding: 7px 9px; border-radius: 6px; background: #fdf1ed; color: #a63f2b; font-size: 10px; line-height: 1.4; }
+.goal-actions { display: flex; align-items: center; gap: 8px; margin-top: 13px; flex-wrap: wrap; }
+.goal-actions .goal-deposit { flex: 1; margin-top: 0; }
+.goal-history { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.goal-history > div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; color: var(--muted); font-size: 10px; }
+.goal-history strong { font-size: 10px; color: #1f9288; }
 .setting-card h3 {
   font-size: 14px;
 }
@@ -963,6 +978,19 @@ h3 {
   color: var(--muted);
   font-size: 12px;
 }
+.budget-status-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 11px; }
+.budget-status-badge { display: inline-flex; align-items: center; border-radius: 99px; padding: 5px 9px; font-weight: 700; }
+.budget-status-badge.safe { color: #1e7063; background: #eef9f5; }
+.budget-status-badge.watch { color: #876016; background: #fff8e9; }
+.budget-status-badge.warning, .budget-status-badge.critical { color: #9c6812; background: #fff3d8; }
+.budget-status-badge.danger { color: #a63f2b; background: #fdf1ed; }
+.budget-tools { margin-top: 18px; padding: 18px 20px; }
+.budget-tools-copy strong { font-size: 14px; }
+.budget-tools-copy p { margin: 5px 0 13px; color: var(--muted); font-size: 11px; }
+.budget-tools-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.budget-preference-summary { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 10px; }
+.budget-preference-summary span { border: 1px solid var(--line); border-radius: 99px; padding: 5px 9px; }
+.form-helper { font-size: 10px !important; color: var(--muted); line-height: 1.4; }
 .big-progress {
   height: 10px;
   background: #e7f2f0;
@@ -1222,6 +1250,14 @@ h3 {
   .modal input, .modal select { min-height: 44px; font-size: 16px; }
   .form-submit { min-height: 46px; font-size: 14px; }
   .budget-page-card { padding: 20px 16px; }
+  .budget-tools { padding: 15px; }
+  .budget-page-card strong { font-size: 23px; }
+  .budget-status-line { align-items: flex-start; }
+  .goal-card { padding: 14px; }
+  .budget-tools-actions { display: grid; grid-template-columns: 1fr; }
+  .budget-tools-actions .outline-button { width: 100%; }
+  .goal-actions { align-items: stretch; }
+  .goal-actions .text-button { min-height: 38px; }
   .budget-category-grid, .goal-grid, .settings-grid { gap: 10px; }
   .button-row { flex-wrap: wrap; }
   .button-row > * { flex: 1; text-align: center; }
