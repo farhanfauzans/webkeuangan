@@ -51,6 +51,8 @@
           >▦ <span>Dashboard</span></a
         ><a class="nav-link" href="#transaksi" data-page="transaksi"
           >↕ <span>Transaksi</span></a
+        ><a class="nav-link" href="#laporan" data-page="laporan"
+          >▥ <span>Laporan</span></a
         ><a class="nav-link" href="#anggaran" data-page="anggaran"
           >◴ <span>Anggaran</span></a
         ><a class="nav-link" href="#target" data-page="target"
@@ -275,7 +277,30 @@
           <div>
             <h2>Semua transaksi</h2>
             <p>Cari, ubah, atau hapus catatan keuanganmu.</p>
-            <label class="month-picker">Bulan transaksi<input type="month" id="transactionMonth" /></label>
+          </div>
+        </div>
+        <div class="quick-filters" id="quickFilters">
+          <button class="qf-chip active" data-qf="all">Semua</button>
+          <button class="qf-chip" data-qf="today">Hari ini</button>
+          <button class="qf-chip" data-qf="week">Minggu ini</button>
+          <button class="qf-chip" data-qf="month">Bulan ini</button>
+          <button class="qf-chip" data-qf="prevMonth">Bulan lalu</button>
+        </div>
+        <div class="tx-calendar-section panel">
+          <div class="panel-head">
+            <div>
+              <h2>Kalender transaksi</h2>
+              <p id="calendarMonthLabel">Oktober 2026</p>
+            </div>
+            <div class="cal-nav">
+              <button type="button" id="calPrev" aria-label="Bulan sebelumnya">‹</button>
+              <button type="button" id="calNext" aria-label="Bulan selanjutnya">›</button>
+            </div>
+          </div>
+          <div class="cal-grid" id="calendarGrid"></div>
+          <div class="cal-day-detail panel" id="calDayDetail" style="display:none;">
+            <h3 id="calDayTitle"></h3>
+            <div id="calDayTransactions" class="transaction-list"></div>
           </div>
         </div>
         <div class="filters panel">
@@ -291,11 +316,55 @@
             >Dari<input id="filterFrom" type="date" /></label
           ><label class="date-filter"
             >Sampai<input id="filterTo" type="date" /></label
+          ><label class="month-picker">Bulan transaksi<input type="month" id="transactionMonth" /></label
           ><button class="outline-button" id="clearFilters">Reset filter</button
           ><button class="outline-button" id="exportCsv">⇩ Ekspor CSV</button>
         </div>
         <div class="panel">
           <div id="allTransactions" class="transaction-list full-list"></div>
+        </div>
+      </section>
+      <section id="laporan" class="page">
+        <div class="section-heading standalone">
+          <div>
+            <h2>Laporan keuangan</h2>
+            <p>Analisis tren, perbandingan periode, dan rasio menabung.</p>
+          </div>
+          <div class="heading-actions">
+            <label class="month-picker">Periode<input type="month" id="reportMonth" /></label>
+          </div>
+        </div>
+        <div class="report-summary-grid">
+          <div class="report-card panel">
+            <small>TOTAL PEMASUKAN</small>
+            <strong class="positive-amount" id="rptIncome">Rp0</strong>
+          </div>
+          <div class="report-card panel">
+            <small>TOTAL PENGELUARAN</small>
+            <strong class="negative" id="rptExpense">Rp0</strong>
+          </div>
+          <div class="report-card panel">
+            <small>ARUS KAS BERSIH</small>
+            <strong id="rptNet">Rp0</strong>
+          </div>
+          <div class="report-card panel">
+            <small>RASIO MENABUNG</small>
+            <strong id="rptSavingsRatio">0%</strong>
+            <p id="rptSavingsHint"></p>
+          </div>
+        </div>
+        <div class="report-compare panel">
+          <h3>Perbandingan dengan bulan sebelumnya</h3>
+          <div class="compare-grid" id="rptCompare"></div>
+        </div>
+        <div class="report-category-trend panel">
+          <h3>Tren pengeluaran per kategori</h3>
+          <p class="subtitle">Perbandingan 3 bulan terakhir per kategori.</p>
+          <div id="rptCategoryTrend"></div>
+        </div>
+        <div class="report-daily-avg panel">
+          <h3>Rata-rata pengeluaran harian</h3>
+          <div id="rptDailyAvg"></div>
         </div>
       </section>
       <section id="anggaran" class="page">
@@ -532,24 +601,22 @@
               name="category"
               id="recurringCategory"
             ></select></label
-          ><label
-            >Nominal<input
-              name="amount"
-              class="currency-input"
-              inputmode="numeric"
-              placeholder="Rp300.000"
-          /></label>
+          ><label>Jenis<select name="type"><option value="expense">Pengeluaran</option><option value="income">Pemasukan</option></select></label>
         </div>
         <label
-          >Tanggal tiap bulan (1–31)<input
-            name="day"
-            type="number"
-            min="1"
-            max="31"
-            value="1" /></label
-        ><button class="primary-button form-submit">
-          Tambah transaksi rutin
-        </button>
+          >Nominal<input
+            name="amount"
+            class="currency-input"
+            inputmode="numeric"
+            placeholder="Rp300.000"
+        /></label>
+        <div class="form-row">
+          <label>Frekuensi<select name="frequency"><option value="monthly">Bulanan</option><option value="weekly">Mingguan</option><option value="daily">Harian</option><option value="yearly">Tahunan</option></select></label>
+          <label>Tanggal acuan (1–31)<input name="day" type="number" min="1" max="31" value="1" /></label>
+        </div>
+        <label>Tanggal akhir <small>(opsional)</small><input name="endDate" type="date" /></label>
+        <label class="checkbox-label"><input name="confirm" type="checkbox" /> Minta konfirmasi sebelum dicatat</label>
+        <button class="primary-button form-submit">Tambah transaksi rutin</button>
       </form>
     </div>
     <div id="toast" class="toast"></div>

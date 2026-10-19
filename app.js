@@ -57,6 +57,9 @@ let chartVisibility = { income: true, expense: true };
 let chartPeriodMode = "month";
 let chartCustomMonthValue = new Date().toISOString().slice(0, 7);
 let selectedMonth = new Date().toISOString().slice(0, 7);
+let reportMonth = selectedMonth;
+let calendarMonth = selectedMonth;
+let activeQuickFilter = "all";
 function normalizeData() {
   if (typeof data.dailyBudget !== "number") data.dailyBudget = 0;
   data.transactions ||= [];
@@ -67,6 +70,13 @@ function normalizeData() {
     .filter((category, index, list) => category?.name && list.findIndex((item) => item.name.toLowerCase() === category.name.toLowerCase()) === index);
   data.transactions.forEach((transaction) => { if (transaction.note === undefined) transaction.note = ""; });
   data.monthSettings ||= {};
+  data.recurring.forEach((item) => {
+    item.frequency ||= "monthly";
+    item.type ||= "expense";
+    item.confirm = Boolean(item.confirm);
+    item.endDate ||= "";
+    item.lastGenerated ||= "";
+  });
   cats = data.categories.filter((category) => category.type === "expense").map((category) => category.name);
 }
 const monthLabel = (month) => new Date(`${month}-01T00:00:00`).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
@@ -321,6 +331,8 @@ function render() {
   renderGoals();
   renderChart();
   attachChartEvents();
+  renderReport();
+  renderCalendar();
 }
 function renderCategories(expenses = monthTransactions().filter((transaction) => !transaction.income)) {
   let o = {};
@@ -363,6 +375,129 @@ function renderTx() {
       )
       .map(txHTML)
       .join("") || '<p class="subtitle">Tidak ada transaksi yang cocok.</p>';
+}
+function isoDateLocal(value = new Date()) {
+  const d = value instanceof Date ? value : new Date(value);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function previousMonthKey(month) {
+  const d = new Date(`${month}-01T00:00:00`);
+  d.setMonth(d.getMonth() - 1);
+  return isoDateLocal(d).slice(0, 7);
+}
+function reportMonthData(month) {
+  const transactions = monthTransactions(month);
+  const income = sum(transactions.filter((x) => x.income));
+  const expense = sum(transactions.filter((x) => !x.income));
+  const categories = {};
+  transactions.filter((x) => !x.income).forEach((x) => { categories[x.category] = (categories[x.category] || 0) + x.amount; });
+  return { transactions, income, expense, net: income - expense, categories };
+}
+function percentageChange(current, previous) {
+  if (!previous) return current ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+function renderReport() {
+  if (!$("#rptIncome")) return;
+  const current = reportMonthData(reportMonth);
+  const previousKey = previousMonthKey(reportMonth);
+  const previous = reportMonthData(previousKey);
+  const incomeBase = current.income || getMonthSettings(reportMonth).income || 0;
+  const savingsRatio = incomeBase ? Math.round((current.net / incomeBase) * 100) : 0;
+  const ratioState = savingsRatio >= 20 ? "good" : savingsRatio >= 0 ? "neutral" : "bad";
+  $("#rptIncome").textContent = money(current.income);
+  $("#rptExpense").textContent = money(current.expense);
+  $("#rptNet").textContent = `${current.net >= 0 ? "+" : ""}${money(current.net)}`;
+  $("#rptNet").className = current.net >= 0 ? "positive-amount" : "negative";
+  $("#rptSavingsRatio").textContent = `${savingsRatio}%`;
+  $("#rptSavingsRatio").className = ratioState;
+  $("#rptSavingsHint").textContent = savingsRatio >= 20 ? "Bagus, tabungan di atas 20% pemasukan." : savingsRatio >= 0 ? "Coba tingkatkan porsi uang yang disisihkan." : "Pengeluaran melebihi pemasukan periode ini.";
+  const compareItems = [
+    ["Pemasukan", current.income, previous.income, "positive-amount"],
+    ["Pengeluaran", current.expense, previous.expense, "negative"],
+    ["Arus kas bersih", current.net, previous.net, current.net >= previous.net ? "positive-amount" : "negative"],
+  ];
+  $("#rptCompare").innerHTML = compareItems.map(([label, value, oldValue, color]) => {
+    const change = percentageChange(value, oldValue);
+    const direction = change > 0 ? "naik" : change < 0 ? "turun" : "tetap";
+    return `<div class="compare-item"><span>${label}</span><strong class="${color}">${value >= 0 ? "+" : ""}${money(value)}</strong><small>${direction} ${Math.abs(change)}% vs ${monthLabel(previousKey)} <em>(${money(oldValue)})</em></small></div>`;
+  }).join("");
+  const monthKeys = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(`${reportMonth}-01T00:00:00`);
+    d.setMonth(d.getMonth() - i);
+    monthKeys.push(isoDateLocal(d).slice(0, 7));
+  }
+  const categories = [...new Set(monthKeys.flatMap((month) => Object.keys(reportMonthData(month).categories)))];
+  const categoryRows = categories.map((category) => {
+    const values = monthKeys.map((month) => reportMonthData(month).categories[category] || 0);
+    const max = Math.max(...values, 1);
+    return `<div class="trend-row"><div class="trend-label"><b>${icon(category)} ${category}</b><strong>${money(values[2])}</strong></div><div class="trend-bars">${values.map((value, index) => `<div class="trend-bar-wrap" title="${monthLabel(monthKeys[index])}: ${money(value)}"><i style="height:${Math.max(4, (value / max) * 100)}%"></i><small>${compactMoney(value)}</small></div>`).join("")}</div><div class="trend-months">${monthKeys.map((month) => `<span>${monthLabel(month).split(" ")[0]}</span>`).join("")}</div></div>`;
+  }).join("");
+  $("#rptCategoryTrend").innerHTML = categoryRows || '<p class="subtitle">Belum ada data kategori pada periode ini.</p>';
+  const days = daysInMonth(reportMonth);
+  const activeDays = new Set(current.transactions.map((x) => x.date)).size;
+  const avgCalendar = Math.round(current.expense / days);
+  const avgActive = activeDays ? Math.round(current.expense / activeDays) : 0;
+  $("#rptDailyAvg").innerHTML = `<div class="daily-report-grid"><div><small>RATA-RATA PER HARI KALENDER</small><strong>${money(avgCalendar)}</strong><span>${days} hari dalam ${monthLabel(reportMonth)}</span></div><div><small>RATA-RATA HARI TRANSAKSI</small><strong>${money(avgActive)}</strong><span>${activeDays} hari memiliki pengeluaran</span></div><div><small>HARI DENGAN PENGELUARAN TERBESAR</small><strong>${money(Math.max(0, ...current.transactions.filter((x) => !x.income).map((x) => x.amount)))}</strong><span>Transaksi terbesar di periode ini</span></div></div>`;
+}
+function renderCalendar() {
+  if (!$("#calendarGrid")) return;
+  const [year, month] = calendarMonth.split("-").map(Number);
+  const firstDay = new Date(year, month - 1, 1).getDay();
+  const offset = (firstDay + 6) % 7;
+  const totalDays = new Date(year, month, 0).getDate();
+  const monthTx = monthTransactions(calendarMonth);
+  const byDate = monthTx.reduce((result, tx) => { (result[tx.date] ||= []).push(tx); return result; }, {});
+  $("#calendarMonthLabel").textContent = monthLabel(calendarMonth);
+  const headings = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((day) => `<div class="cal-weekday">${day}</div>`).join("");
+  const blanks = Array.from({ length: offset }, () => '<div class="cal-cell empty"></div>').join("");
+  const cells = Array.from({ length: totalDays }, (_, index) => {
+    const day = index + 1;
+    const dateKey = `${calendarMonth}-${String(day).padStart(2, "0")}`;
+    const entries = byDate[dateKey] || [];
+    const income = sum(entries.filter((x) => x.income));
+    const expense = sum(entries.filter((x) => !x.income));
+    const selected = $("#calDayDetail")?.dataset.date === dateKey;
+    return `<button type="button" class="cal-cell ${selected ? "selected" : ""} ${entries.length ? "has-tx" : ""}" data-calendar-date="${dateKey}"><b>${day}</b>${entries.length ? `<span class="cal-dot"></span><small>${expense ? "−" + compactMoney(expense) : ""}${income ? " +" + compactMoney(income) : ""}</small>` : ""}</button>`;
+  }).join("");
+  $("#calendarGrid").innerHTML = headings + blanks + cells;
+  $("#calendarGrid").querySelectorAll("[data-calendar-date]").forEach((button) => { button.onclick = () => showCalendarDay(button.dataset.calendarDate); });
+}
+function showCalendarDay(dateKey) {
+  const detail = $("#calDayDetail");
+  const entries = data.transactions.filter((x) => x.date === dateKey).sort((a, b) => Number(b.income) - Number(a.income));
+  detail.dataset.date = dateKey;
+  detail.style.display = "block";
+  $("#calDayTitle").textContent = date(dateKey);
+  $("#calDayTransactions").innerHTML = entries.map(txHTML).join("") || '<p class="subtitle">Tidak ada transaksi pada hari ini.</p>';
+  renderCalendar();
+}
+function applyQuickFilter(filter) {
+  activeQuickFilter = filter;
+  const today = new Date();
+  const todayKey = isoDateLocal(today);
+  let from = "", to = "";
+  if (filter === "today") from = to = todayKey;
+  if (filter === "week") {
+    const start = new Date(today);
+    const day = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - day);
+    from = isoDateLocal(start); to = todayKey;
+  }
+  if (filter === "month") from = `${todayKey.slice(0, 7)}-01`, to = `${todayKey.slice(0, 7)}-${String(daysInMonth(todayKey.slice(0, 7))).padStart(2, "0")}`;
+  if (filter === "prevMonth") {
+    const key = previousMonthKey(todayKey.slice(0, 7));
+    from = `${key}-01`; to = `${key}-${String(daysInMonth(key)).padStart(2, "0")}`;
+  }
+  $("#transactionMonth").value = "";
+  $("#filterFrom").value = from;
+  $("#filterTo").value = to;
+  $$(".qf-chip").forEach((button) => button.classList.toggle("active", button.dataset.qf === filter));
+  renderTx();
 }
 function renderBudgets() {
   const settings = getMonthSettings();
@@ -645,6 +780,7 @@ function go(p) {
     transaksi: "Transaksi keuangan",
     anggaran: "Anggaran bulanan",
     target: "Target tabungan",
+    laporan: "Laporan keuangan",
     pengaturan: "Pengaturan",
   }[p];
   $("[data-dashboard-only]").style.display = p === "dashboard" ? "inline-flex" : "none";
@@ -800,10 +936,15 @@ $("#recurringForm").onsubmit = (e) => {
   if (!f.name.value || !number(f.amount.value)) return;
   data.recurring.push({
     id: crypto.randomUUID(),
-    name: f.name.value,
+    name: f.name.value.trim(),
     category: f.category.value,
     amount: number(f.amount.value),
-    day: f.day.value,
+    type: f.type.value,
+    frequency: f.frequency.value,
+    day: Number(f.day.value) || 1,
+    endDate: f.endDate.value,
+    confirm: f.confirm.checked,
+    lastGenerated: "",
   });
   f.reset();
   save();
@@ -868,8 +1009,20 @@ document.body.onclick = (e) => {
 };
 $("#dashboardMonth").value = selectedMonth;
 $("#transactionMonth").value = selectedMonth;
+if ($("#reportMonth")) $("#reportMonth").value = reportMonth;
 if ($("#chartCustomMonth")) $("#chartCustomMonth").value = chartCustomMonthValue;
-$("#dashboardMonth").onchange = $("#transactionMonth").onchange = (event) => { selectedMonth = event.target.value || new Date().toISOString().slice(0, 7); $("#dashboardMonth").value = selectedMonth; $("#transactionMonth").value = selectedMonth; render(); };
+$("#dashboardMonth").onchange = (event) => {
+  selectedMonth = event.target.value || new Date().toISOString().slice(0, 7);
+  $("#dashboardMonth").value = selectedMonth;
+  $("#transactionMonth").value = selectedMonth;
+  calendarMonth = selectedMonth;
+  render();
+};
+$("#transactionMonth").onchange = (event) => {
+  activeQuickFilter = "all";
+  $$(".qf-chip").forEach((button) => button.classList.toggle("active", button.dataset.qf === "all"));
+  renderTx();
+};
 if ($("#toggleIncomeLine")) {
   $("#toggleIncomeLine").onclick = () => {
     chartVisibility.income = !chartVisibility.income;
@@ -904,7 +1057,35 @@ if ($("#chartCustomMonth")) {
     renderChart();
   };
 }
+if ($("#reportMonth")) {
+  $("#reportMonth").onchange = (event) => { reportMonth = event.target.value || selectedMonth; renderReport(); };
+}
+if ($("#calPrev")) {
+  $("#calPrev").onclick = () => {
+    const d = new Date(`${calendarMonth}-01T00:00:00`);
+    d.setMonth(d.getMonth() - 1);
+    calendarMonth = isoDateLocal(d).slice(0, 7);
+    $("#calDayDetail").style.display = "none";
+    $("#calDayDetail").dataset.date = "";
+    renderCalendar();
+  };
+  $("#calNext").onclick = () => {
+    const d = new Date(`${calendarMonth}-01T00:00:00`);
+    d.setMonth(d.getMonth() + 1);
+    calendarMonth = isoDateLocal(d).slice(0, 7);
+    $("#calDayDetail").style.display = "none";
+    $("#calDayDetail").dataset.date = "";
+    renderCalendar();
+  };
+}
+$$(".qf-chip").forEach((button) => { button.onclick = () => applyQuickFilter(button.dataset.qf); });
 $("#expenseForm").type.onchange = refreshCategoryInputs;
+$("#recurringForm").type.onchange = () => options("#recurringCategory", $("#recurringForm").type.value);
+$("#recurringForm").frequency.onchange = () => {
+  const monthly = $("#recurringForm").frequency.value === "monthly";
+  const label = $("#recurringForm").day.closest("label");
+  if (label) label.firstChild.textContent = monthly ? "Tanggal tiap bulan (1–31)" : "Hari acuan 1–7 (Senin–Minggu)";
+};
 $$('[data-quick-amount]').forEach((button) => button.onclick = () => { $("#expenseForm").amount.value = money(+button.dataset.quickAmount); });
 $("#searchTx").oninput = renderTx;
 $("#filterCategory").onchange =
@@ -918,15 +1099,43 @@ $("#clearFilters").onclick = () => {
   $("#filterType").value = "";
   $("#filterFrom").value = "";
   $("#filterTo").value = "";
+  $("#transactionMonth").value = selectedMonth;
+  activeQuickFilter = "all";
+  $$(".qf-chip").forEach((button) => button.classList.toggle("active", button.dataset.qf === "all"));
   renderTx();
 };
+const recurringLabels = { daily: "Harian", weekly: "Mingguan", monthly: "Bulanan", yearly: "Tahunan" };
+function recurringDateMatches(item, dateValue) {
+  const d = new Date(`${dateValue}T00:00:00`);
+  const anchorDay = Math.min(Math.max(Number(item.day) || 1, 1), 31);
+  if (item.frequency === "daily") return true;
+  // 1 = Senin sampai 7 = Minggu. Hari browser memakai 0 = Minggu.
+  if (item.frequency === "weekly") return ((d.getDay() + 6) % 7) + 1 === Math.min(anchorDay, 7);
+  if (item.frequency === "yearly") return d.getDate() === anchorDay && d.getMonth() === 0;
+  return d.getDate() === Math.min(anchorDay, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate());
+}
+function generateRecurringTransactions() {
+  const today = isoDateLocal();
+  let generated = 0;
+  data.recurring.forEach((item) => {
+    if (item.endDate && today > item.endDate) return;
+    if (!recurringDateMatches(item, today) || item.lastGenerated === today) return;
+    const addRecurring = () => {
+      data.transactions.push({ id: crypto.randomUUID(), name: item.name, category: item.category, amount: item.amount, date: today, income: item.type === "income", recurringId: item.id, note: "Transaksi rutin" });
+      item.lastGenerated = today;
+      generated++;
+    };
+    if (item.confirm) {
+      if (confirm(`Catat transaksi rutin ${item.name} sebesar ${money(item.amount)} hari ini?`)) addRecurring();
+      else item.lastGenerated = today;
+    } else addRecurring();
+  });
+  if (generated) { save(); toast(`${generated} transaksi rutin dicatat`); }
+}
 function renderRecurring() {
   $("#recurringList").innerHTML =
     data.recurring
-      .map(
-        (x) =>
-          `<div class="recurring-row"><span>${x.name}<small>${x.category} · tiap tanggal ${x.day}</small></span><b>${money(x.amount)}</b><button data-remove-recurring="${x.id}">×</button></div>`,
-      )
+      .map((x) => `<div class="recurring-row"><span>${x.name}<small>${x.category} · ${recurringLabels[x.frequency] || "Bulanan"}${x.endDate ? ` · hingga ${date(x.endDate)}` : ""}${x.confirm ? " · perlu konfirmasi" : ""}</small></span><b class="${x.type === "income" ? "positive-amount" : "negative"}">${x.type === "income" ? "+" : "-"}${money(x.amount)}</b><button data-remove-recurring="${x.id}">×</button></div>`)
       .join("") || '<p class="subtitle">Belum ada transaksi rutin.</p>';
 }
 $("#exportCsv").onclick = () => {
@@ -1066,6 +1275,7 @@ $("#authForm").onsubmit = async (e) => {
   if (result.data.user && !result.data.session) return setAuthMessage("Cek email untuk mengonfirmasi akun, lalu masuk.");
   setAuthenticated(result.data.user);
 };
+generateRecurringTransactions();
 initAuth();
 refreshCategoryInputs();
 renderCategoryManager();
