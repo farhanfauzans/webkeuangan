@@ -18,3 +18,7 @@ create policy "Users create their own data" on public.user_data
 drop policy if exists "Users update their own data" on public.user_data;
 create policy "Users update their own data" on public.user_data
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "Users delete their own data" on public.user_data;
+create policy "Users delete their own data" on public.user_data
+  for delete using (auth.uid() = user_id);

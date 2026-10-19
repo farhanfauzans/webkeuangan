@@ -44,11 +44,12 @@ const base = {
       date: "2026-10-08",
     },
   ],
-  goals: [{ id: "g1", name: "Dana darurat", target: 12000000, saved: 4500000 }],
-  categoryBudgets: { "Makanan & Minuman": 1500000, Transportasi: 500000 },
-  recurring: [],
-  categories: [...defaultCategories],
-};
+    goals: [{ id: "g1", name: "Dana darurat", target: 12000000, saved: 4500000 }],
+    categoryBudgets: { "Makanan & Minuman": 1500000, Transportasi: 500000 },
+    recurring: [],
+    categories: [...defaultCategories],
+    profile: { name: "Farhan", currency: "IDR", onboarded: false },
+  };
 let data = JSON.parse(localStorage.getItem("ruangDanaPro")) || structuredClone(base);
 let supabaseClient = null;
 let currentUser = null;
@@ -66,6 +67,12 @@ function normalizeData() {
   data.transactions ||= [];
   data.goals ||= [];
   data.recurring ||= [];
+  data.profile ||= { name: "Farhan", currency: "IDR", onboarded: false };
+  if (!data.profile.name) {
+    data.profile.name = currentUser?.email ? currentUser.email.split("@")[0] : "Farhan";
+  }
+  data.profile.currency ||= "IDR";
+  data.profile.onboarded = Boolean(data.profile.onboarded);
   const legacyCategories = [...(data.categories || defaultCategories), ...data.transactions.map((x) => x.category), ...defaultIncomeCategories];
   data.categories = legacyCategories.map((category) => typeof category === "string" ? { name: category, type: defaultIncomeCategories.includes(category) ? "income" : "expense", icon: category === "Pemasukan" ? "↓" : "•", color: "#1f9288" } : category)
     .filter((category, index, list) => category?.name && list.findIndex((item) => item.name.toLowerCase() === category.name.toLowerCase()) === index);
@@ -212,6 +219,15 @@ function render() {
   const dailyPct = settings.dailyBudget ? Math.min(100, (todayUsed / settings.dailyBudget) * 100) : 0;
 
   $("#summaryTitle").textContent = `Ringkasan ${monthLabel(selectedMonth)}`;
+  const profileName = data.profile?.name || (currentUser?.email ? currentUser.email.split("@")[0] : "Farhan");
+  if ($("#profileName")) $("#profileName").textContent = profileName;
+  if ($("#profileAvatar")) $("#profileAvatar").textContent = profileName.slice(0, 2).toUpperCase();
+  if ($("#settingProfileName") && document.activeElement !== $("#settingProfileName")) {
+    $("#settingProfileName").value = profileName;
+  }
+  if ($("#dashboard").classList.contains("active-page")) {
+    $("#pageTitle").textContent = `Selamat datang, ${profileName} 👋`;
+  }
   $("#balance").textContent = money(saved);
   if ($("#balancePeriod")) $("#balancePeriod").textContent = `Periode ${monthLabel(selectedMonth)} (pemasukan - pengeluaran)`;
   $("#incomeTotal").textContent = money(totalIncome);
@@ -709,7 +725,7 @@ function renderChart() {
     const expArea = `M ${getX(0)},${padTop + chartH} L ${expPoints} L ${getX(n - 1)},${padTop + chartH} Z`;
     pathsSvg += `
       <path d="${expArea}" fill="url(#expenseGrad)"/>
-      <polyline points="${expPoints}" fill="none" stroke="#df7055" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="${expPoints}" fill="none" stroke="#df7055" stroke-width="3" stroke-dasharray="6 4" stroke-linecap="round" stroke-linejoin="round"/>
     `;
   }
 
@@ -818,7 +834,7 @@ function attachChartEvents() {
         circles += `<circle cx="${x}" cy="${yInc}" r="5" fill="#fff" stroke="#1f9288" stroke-width="2.5"/>`;
       }
       if (chartVisibility.expense) {
-        circles += `<circle cx="${x}" cy="${yExp}" r="5" fill="#fff" stroke="#df7055" stroke-width="2.5"/>`;
+        circles += `<rect x="${x - 4.5}" y="${yExp - 4.5}" width="9" height="9" rx="2" fill="#fff" stroke="#df7055" stroke-width="2.5"/>`;
       }
       group.innerHTML = `
         <line x1="${x}" y1="${padTop}" x2="${x}" y2="${padTop + chartH}" stroke="#8cb5ae" stroke-width="1.5" stroke-dasharray="3 3"/>
@@ -834,8 +850,8 @@ function attachChartEvents() {
     tooltip.style.top = `${tooltipTop}px`;
     tooltip.innerHTML = `
       <div class="chart-tooltip-date">${new Date(item.date + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>
-      <div class="chart-tooltip-row"><span>Pemasukan:</span><b style="color:#2ec4b6">+${money(item.income)}</b></div>
-      <div class="chart-tooltip-row"><span>Pengeluaran:</span><b style="color:#ff8566">-${money(item.expense)}</b></div>
+      <div class="chart-tooltip-row"><span>Pemasukan (───):</span><b style="color:#2ec4b6">+${money(item.income)}</b></div>
+      <div class="chart-tooltip-row"><span>Pengeluaran (┈┈┈):</span><b style="color:#ff8566">-${money(item.expense)}</b></div>
       <div class="chart-tooltip-net"><span>Arus bersih:</span><b style="color:${item.net > 0 ? '#48cfb2' : item.net < 0 ? '#ff8566' : '#fff'}">${item.net > 0 ? '+' : ''}${money(item.net)}</b></div>
     `;
     tooltip.classList.add("show");
@@ -869,8 +885,9 @@ function go(p) {
   $$(".nav-link").forEach((x) =>
     x.classList.toggle("active", x.dataset.page === p),
   );
+  const profileName = data.profile?.name || (currentUser?.email ? currentUser.email.split("@")[0] : "Farhan");
   $("#pageTitle").textContent = {
-    dashboard: "Selamat datang, Farhan 👋",
+    dashboard: `Selamat datang, ${profileName} 👋`,
     transaksi: "Transaksi keuangan",
     anggaran: "Anggaran bulanan",
     target: "Target tabungan",
@@ -1373,14 +1390,16 @@ async function loadCloudData() {
   refreshCategoryInputs();
   renderCategoryManager();
   render();
+  checkInitialOnboarding();
 }
 function setAuthMessage(message = "") { $("#authMessage").textContent = message; }
 function setAuthenticated(user) {
   currentUser = user;
   $("#authScreen").classList.add("hidden");
+  const profileName = data.profile?.name || user.email?.split("@")[0] || "RuangDana";
   $("#profileEmail").textContent = user.email || "Akun terhubung";
-  $("#profileName").textContent = user.email?.split("@")[0] || "RuangDana";
-  $("#profileAvatar").textContent = (user.email || "RD").slice(0, 2).toUpperCase();
+  $("#profileName").textContent = profileName;
+  $("#profileAvatar").textContent = profileName.slice(0, 2).toUpperCase();
   loadCloudData();
 }
 async function initAuth() {
@@ -1403,6 +1422,25 @@ $("#authSwitch").onclick = () => {
   $("#authForm").password.autocomplete = authMode === "login" ? "current-password" : "new-password";
   setAuthMessage();
 };
+if ($("#authForgot")) {
+  $("#authForgot").onclick = async () => {
+    if (!supabaseClient) return setAuthMessage("Isi konfigurasi Supabase terlebih dahulu.");
+    let email = $("#authForm").email.value.trim();
+    if (!email) {
+      email = prompt("Masukkan alamat email akunmu untuk menerima tautan reset kata sandi:");
+      if (!email?.trim()) return;
+      email = email.trim();
+    }
+    setAuthMessage("Mengirim tautan reset kata sandi…");
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: location.href });
+    if (error) {
+      setAuthMessage(error.message);
+    } else {
+      setAuthMessage("Tautan reset kata sandi telah dikirim ke email. Silakan periksa kotak masuk atau spam.");
+      toast("Link reset kata sandi dikirim");
+    }
+  };
+}
 $("#syncNow").onclick = () => currentUser ? save().then(() => toast("Sinkronisasi selesai")) : toast("Silakan masuk terlebih dahulu");
 $("#logoutButton").onclick = async () => { if (supabaseClient) await supabaseClient.auth.signOut(); location.reload(); };
 $("#resetPassword").onclick = async () => { if (!supabaseClient || !currentUser?.email) return toast("Email akun belum tersedia"); const { error } = await supabaseClient.auth.resetPasswordForEmail(currentUser.email, { redirectTo: location.href }); toast(error ? "Gagal mengirim link reset" : "Link reset password dikirim ke emailmu"); };
@@ -1421,6 +1459,161 @@ $("#authForm").onsubmit = async (e) => {
   if (result.data.user && !result.data.session) return setAuthMessage("Cek email untuk mengonfirmasi akun, lalu masuk.");
   setAuthenticated(result.data.user);
 };
+
+// Pengaturan Profil
+if ($("#profileForm")) {
+  $("#profileForm").onsubmit = (e) => {
+    e.preventDefault();
+    const name = $("#settingProfileName").value.trim();
+    if (!name) return toast("Nama profil tidak boleh kosong");
+    data.profile ||= {};
+    data.profile.name = name;
+    save();
+    toast("Profil berhasil diperbarui");
+  };
+}
+
+// Onboarding Pengguna Baru
+const onboardingSteps = [
+  {
+    icon: "🌟",
+    title: "Selamat datang di RuangDana",
+    desc: "Aplikasi keuangan pribadi yang bersih, cepat, dan privat. Seluruh data keuanganmu dapat tersimpan aman di cloud pribadi tanpa pelacak atau pihak ketiga.",
+    features: [
+      { label: "Privasi Maksimal", desc: "Data terlindungi Supabase Row Level Security dan salinan lokal di browsermu." },
+      { label: "Fokus Esensial", desc: "Bebas iklan, tanpa akun multi-rekening yang rumit, dirancang khusus untuk kenyamanan pribadi." },
+    ],
+  },
+  {
+    icon: "◴",
+    title: "Kendalikan Anggaran Bulanan",
+    desc: "Atur batas belanja per bulan dan batas harian agar kamu selalu tahu jatah belanja aman setiap hari.",
+    features: [
+      { label: "Peringatan 50%, 75%, 90%, 100%", desc: "Dapatkan tanda peringatan sebelum pengeluaran bulanan atau harian melewati batas." },
+      { label: "Template & Rollover", desc: "Simpan alokasi favoritmu sebagai template dan bawa sisa anggaran bulan lalu otomatis." },
+    ],
+  },
+  {
+    icon: "↕",
+    title: "Catat Cepat & Transaksi Rutin",
+    desc: "Tambahkan transaksi harian dalam hitungan detik dan kelola pengeluaran berulang tanpa perlu mengetik ulang.",
+    features: [
+      { label: "Transaksi Rutin", desc: "Langganan dan tagihan harian, mingguan, bulanan, atau tahunan otomatis tercatat saat jatuh tempo." },
+      { label: "Grafik & Kalender Interaktif", desc: "Visualisasi arus kas yang ramah aksesibilitas dan kalender catatan per hari." },
+    ],
+  },
+  {
+    icon: "◎",
+    title: "Wujudkan Target Tabungan",
+    desc: "Rencanakan tujuan menabungmu dengan kalkulator estimasi tanggal selesai dan setoran otomatis.",
+    features: [
+      { label: "Deteksi Target Realistis", desc: "Peringatan dini otomatis jika target tabungan membutuhkan setoran di luar kemampuan." },
+      { label: "Prioritas & Riwayat", desc: "Ketahui target mana yang paling penting dan pantau riwayat setorannya secara transparan." },
+    ],
+  },
+];
+
+let currentOnboardingStep = 0;
+function renderOnboardingStep(index) {
+  currentOnboardingStep = Math.max(0, Math.min(index, onboardingSteps.length - 1));
+  const step = onboardingSteps[currentOnboardingStep];
+  $("#onboardingStepEyebrow").textContent = `PANDUAN MEMULAI · LANGKAH ${currentOnboardingStep + 1} DARI ${onboardingSteps.length}`;
+  $("#onboardingTitle").textContent = step.title;
+  $("#onboardingBody").innerHTML = `
+    <div class="onboarding-step-card">
+      <div class="onboarding-icon">${step.icon}</div>
+      <h3>${step.title}</h3>
+      <p>${step.desc}</p>
+      <div class="onboarding-features">
+        ${step.features.map((f) => `<div class="onboarding-feature-item"><span>✓</span><div><strong>${f.label}:</strong> ${f.desc}</div></div>`).join("")}
+      </div>
+    </div>
+  `;
+  $$("#onboardingDots .dot").forEach((dot, i) => dot.classList.toggle("active", i === currentOnboardingStep));
+  $("#onboardingPrev").disabled = currentOnboardingStep === 0;
+  const isLast = currentOnboardingStep === onboardingSteps.length - 1;
+  $("#onboardingNext").textContent = isLast ? "Selesai & Mulai ✓" : "Lanjut →";
+}
+function completeOnboarding() {
+  data.profile ||= {};
+  data.profile.onboarded = true;
+  close("onboardingModal");
+  save();
+  toast("Selamat menjelajah RuangDana!");
+}
+if ($("#onboardingNext")) {
+  $("#onboardingNext").onclick = () => {
+    if (currentOnboardingStep < onboardingSteps.length - 1) {
+      renderOnboardingStep(currentOnboardingStep + 1);
+    } else {
+      completeOnboarding();
+    }
+  };
+}
+if ($("#onboardingPrev")) {
+  $("#onboardingPrev").onclick = () => {
+    if (currentOnboardingStep > 0) {
+      renderOnboardingStep(currentOnboardingStep - 1);
+    }
+  };
+}
+if ($("#onboardingSkip")) {
+  $("#onboardingSkip").onclick = completeOnboarding;
+}
+if ($("#openOnboarding")) {
+  $("#openOnboarding").onclick = () => {
+    renderOnboardingStep(0);
+    modal("onboardingModal");
+  };
+}
+function checkInitialOnboarding() {
+  if (!data.profile?.onboarded && $("#authScreen").classList.contains("hidden")) {
+    renderOnboardingStep(0);
+    modal("onboardingModal");
+  }
+}
+
+// Penghapusan Akun & Data Permanen
+if ($("#openDeleteAccount")) {
+  $("#openDeleteAccount").onclick = () => {
+    $("#deleteConfirmationInput").value = "";
+    $("#deleteAccountConfirmBtn").disabled = true;
+    modal("deleteAccountModal");
+  };
+}
+if ($("#deleteConfirmationInput")) {
+  $("#deleteConfirmationInput").oninput = (e) => {
+    const isMatch = e.target.value.trim() === "HAPUS SEMUA DATA";
+    $("#deleteAccountConfirmBtn").disabled = !isMatch;
+  };
+}
+if ($("#deleteAccountForm")) {
+  $("#deleteAccountForm").onsubmit = async (e) => {
+    e.preventDefault();
+    if ($("#deleteConfirmationInput").value.trim() !== "HAPUS SEMUA DATA") return;
+    const btn = $("#deleteAccountConfirmBtn");
+    btn.disabled = true;
+    btn.textContent = "Menghapus akun & data...";
+
+    try {
+      if (supabaseClient && currentUser) {
+        const { error } = await supabaseClient.from("user_data").delete().eq("user_id", currentUser.id);
+        if (error) console.error("Error deleting cloud row:", error);
+        await supabaseClient.auth.signOut();
+      }
+      localStorage.removeItem("ruangDanaPro");
+      localStorage.removeItem("ruangDanaTheme");
+      data = structuredClone(base);
+      close("deleteAccountModal");
+      alert("Akun dan seluruh data keuangan Anda berhasil dihapus secara permanen.");
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Hapus Akun & Data Permanen";
+      toast("Gagal menghapus data. Silakan coba kembali.");
+    }
+  };
+}
 generateRecurringTransactions();
 processAutomaticGoalDeposits();
 initAuth();
@@ -1435,4 +1628,5 @@ $("#today").textContent = new Date()
   })
   .toUpperCase();
 render();
+checkInitialOnboarding();
 if (location.hash && $(location.hash)) go(location.hash.slice(1));

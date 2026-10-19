@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <a href="#mainContent" class="skip-link">Lewati ke konten utama</a>
     <section class="auth-screen" id="authScreen">
       <form class="auth-card" id="authForm">
         <div class="auth-brand"><span class="brand-mark">R</span><b>ruang<span>dana</span></b></div>
@@ -25,7 +26,10 @@
         <label>Email<input required type="email" name="email" autocomplete="email" placeholder="nama@email.com" /></label>
         <label>Kata sandi<input required type="password" name="password" autocomplete="current-password" minlength="6" placeholder="Minimal 6 karakter" /></label>
         <button class="primary-button form-submit" id="authSubmit">Masuk</button>
-        <button class="text-button auth-switch" type="button" id="authSwitch">Belum punya akun? Daftar</button>
+        <div class="auth-aux-actions">
+          <button class="text-button auth-switch" type="button" id="authSwitch">Belum punya akun? Daftar</button>
+          <button class="text-button auth-forgot" type="button" id="authForgot">Lupa kata sandi?</button>
+        </div>
         <p class="auth-message" id="authMessage"></p>
       </form>
     </section>
@@ -78,11 +82,11 @@
         <button class="reset-button logout-button" id="logoutButton">↪ Keluar dari akun</button>
       </div>
     </aside>
-    <main>
+    <main id="mainContent" tabindex="-1">
       <header>
         <div>
           <p class="eyebrow" id="today"></p>
-          <h1 id="pageTitle">Selamat datang, Farhan 👋</h1>
+          <h1 id="pageTitle">Selamat datang 👋</h1>
           <p class="subtitle">Kelola uangmu dengan lebih tenang dan terarah.</p>
         </div>
         <div class="header-actions">
@@ -225,10 +229,10 @@
             </div>
             <div class="chart-legend-row" role="group" aria-label="Legenda grafik">
               <button type="button" class="legend-chip active" id="toggleIncomeLine" data-line="income" aria-pressed="true">
-                <i class="legend-dot income"></i><span>Pemasukan</span>
+                <i class="legend-symbol income" aria-hidden="true"></i><span>Pemasukan <small class="legend-pattern-hint">(Solid)</small></span>
               </button>
               <button type="button" class="legend-chip active" id="toggleExpenseLine" data-line="expense" aria-pressed="true">
-                <i class="legend-dot expense"></i><span>Pengeluaran</span>
+                <i class="legend-symbol expense" aria-hidden="true"></i><span>Pengeluaran <small class="legend-pattern-hint">(Putus-putus)</small></span>
               </button>
             </div>
             <div class="line-chart-shell">
@@ -436,6 +440,26 @@
           <button class="outline-button" id="resetPassword">Kirim link reset password</button>
         </div>
         <div class="settings-grid">
+          <article class="panel setting-card profile-card">
+            <h3>👤 Profil Pengguna</h3>
+            <p>Atur nama panggilan dan preferensi tampilan akunmu.</p>
+            <form id="profileForm" class="profile-setting-form">
+              <label>Nama panggilan
+                <input required name="profileName" id="settingProfileName" maxlength="32" placeholder="Nama Anda" />
+              </label>
+              <label>Format mata uang
+                <select name="profileCurrency" id="settingCurrency" disabled>
+                  <option value="IDR" selected>Rupiah Indonesia (Rp - IDR)</option>
+                </select>
+              </label>
+              <button type="submit" class="outline-button">Simpan profil</button>
+            </form>
+          </article>
+          <article class="panel setting-card">
+            <h3>🚀 Panduan Memulai</h3>
+            <p>Buka kembali tur interaktif fitur RuangDana kapan saja.</p>
+            <button class="outline-button" id="openOnboarding">Buka panduan onboarding</button>
+          </article>
           <article class="panel setting-card">
             <h3>🌗 Tampilan</h3>
             <p>Pilih mode nyaman untuk matamu.</p>
@@ -470,6 +494,11 @@
             <button class="outline-button" id="openRecurring">
               Kelola transaksi berulang
             </button>
+          </article>
+          <article class="panel setting-card danger-zone-card">
+            <h3 class="danger-title">⚠ Hapus Akun & Data</h3>
+            <p>Hapus seluruh catatan keuangan dari cloud dan perangkat ini secara permanen.</p>
+            <button class="outline-button danger-button" id="openDeleteAccount">Hapus semua data & akun</button>
           </article>
         </div>
       </section>
@@ -632,6 +661,50 @@
         <label>Tanggal akhir <small>(opsional)</small><input name="endDate" type="date" /></label>
         <label class="checkbox-label"><input name="confirm" type="checkbox" /> Minta konfirmasi sebelum dicatat</label>
         <button class="primary-button form-submit">Tambah transaksi rutin</button>
+      </form>
+    </div>
+    <div class="modal-backdrop" id="onboardingModal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle">
+      <div class="modal onboarding-modal">
+        <button type="button" class="close" data-close="onboardingModal" aria-label="Tutup panduan">×</button>
+        <p class="eyebrow" id="onboardingStepEyebrow">PANDUAN MEMULAI · LANGKAH 1 DARI 4</p>
+        <h2 id="onboardingTitle">Selamat datang di RuangDana</h2>
+        <div class="onboarding-body" id="onboardingBody"></div>
+        <div class="onboarding-dots" id="onboardingDots" aria-hidden="true">
+          <span class="dot active"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <div class="onboarding-footer">
+          <button type="button" class="text-button" id="onboardingSkip">Lewati panduan</button>
+          <div class="onboarding-nav-btns">
+            <button type="button" class="outline-button" id="onboardingPrev" disabled>← Sebelumnya</button>
+            <button type="button" class="primary-button" id="onboardingNext">Lanjut →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop" id="deleteAccountModal" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
+      <form class="modal danger-modal" id="deleteAccountForm">
+        <button type="button" class="close" data-close="deleteAccountModal" aria-label="Tutup modal">×</button>
+        <p class="eyebrow danger-eyebrow">KONFIRMASI PENGHAPUSAN PERMANEN</p>
+        <h2 id="deleteAccountTitle">Hapus Akun & Seluruh Data</h2>
+        <div class="delete-warning-box">
+          <p><strong>Peringatan penting:</strong> Tindakan ini menghapus seluruh rekaman keuangan Anda secara permanen dan tidak dapat dibatalkan.</p>
+          <ul>
+            <li>Semua transaksi, anggaran bulanan, dan kategori kustom akan dihapus.</li>
+            <li>Target tabungan beserta riwayat setoran akan dimusnahkan.</li>
+            <li>Data yang tersimpan di server Supabase Cloud akan dihapus bersih.</li>
+            <li>Sesi akun dan data di perangkat lokal ini akan dibersihkan.</li>
+          </ul>
+        </div>
+        <label for="deleteConfirmationInput">Untuk konfirmasi, ketik frasa di bawah ini:
+          <strong class="phrase-to-type">HAPUS SEMUA DATA</strong>
+          <input required id="deleteConfirmationInput" autocomplete="off" placeholder="Ketik: HAPUS SEMUA DATA" />
+        </label>
+        <button type="submit" class="danger-button full-width" id="deleteAccountConfirmBtn" disabled>
+          Hapus Akun & Data Permanen
+        </button>
       </form>
     </div>
     <div id="toast" class="toast"></div>
